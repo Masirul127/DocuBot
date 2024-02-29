@@ -3,3 +3,9 @@ uvicorn
 gunicorn
 pdf2docx
 mammoth
+pdfplumber
+pandas
+psycopg2
+sqlalchemy
+re
+pydantic
