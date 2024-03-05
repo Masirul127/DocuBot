@@ -169,7 +169,7 @@ def rating_calculation(applno):
     total_score = sum(row[1] for row in all_data)
 
     update_query = "UPDATE loandetails SET rating = %s WHERE applno = applno;"
-    cur.execute(update_query, (total_score,))
+    cur.execute(update_query, (total_score/4,))
     conn.commit()
     cur.close()
 
