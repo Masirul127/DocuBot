@@ -91,30 +91,67 @@ class Extraction:
             details[key] = match.group(1) if match else "Not Found"
         return details
 
+    def extract_key_value_indian(self,text):
+        details = {}
+        pattern = r'Product type :\s*(.*?)\n(?=Email)'
+        match = re.search(pattern, text, re.DOTALL)
+        data_between_product_and_email = match.group(1).strip().split('\n')
+        details['accountholder'] = data_between_product_and_email[1]
+        details['address'] = data_between_product_and_email[2:5]
+        branchname_address = re.search(r'Page No: (\d+)\n(.*?)\nBranch Code', text,re.DOTALL)
+        branchname_address_match = branchname_address.group(2).strip().split('\n')
+        details['branch'] = branchname_address_match[1]
+        details['bankaddress'] = branchname_address_match[2]
+        statementfrom = re.search(r'STATEMENT OF ACCOUNT from (.*?) for Account Number', text,re.DOTALL)
+        details['statementperiod'] = statementfrom.group(1) if statementfrom else "Not Found"
+        patterns = {
+            'branchcode': r'Branch Code\s*:\s*(\d+)',
+            'accountno': r'Account Number\s*:\s*(\d+)',
+            'producttype': r'Product type\s*:\s*(\S+)',
+            'email': r'Email\s*:\s*([\w\.-]+@[\w\.-]+)',
+            'statementdate': r'(.*?)\nCleared Balance',
+            'clearedbalance': r'Cleared Balance\s*:\s*(\d+\.\d+)',
+            'unclearedamount': r'Uncleared Amount\s*:\s*(\d+\.\d+)',
+            'drawingpower': r'Drawing Power\s*:\s*(\d+\.\d+)',
+            'interestrate': r'Interest Rate\s*:\s*(\d+\.\d+)'
+        }
+
+        # Extract information using regex
+        for key, pattern in patterns.items():
+            match = re.search(pattern, text)
+            details[key] = match.group(1) if match else "Not Found"
+        return details
+
     def extract_key_value_hdfc(self,text):
         details = {}
-        # Extract Account Number
         account_number = re.search(r'AccountNo\s*:\s*(\d+)', text)
         details['accountno'] = account_number.group(1) if account_number else "Not Found"
-
-        # Extract Address
-        bankaddress_match = re.search(r'Address\s*:\s*([\w\d\s,/]+)', text)
+        bankaddress_match = re.search(r'Address\s*:\s*([^:]+)\s*City', text)
         details['bankaddress'] = bankaddress_match.group(1) if bankaddress_match else "Not Found"
-        name_match = re.search(r'\b(MR|MRS|MS|SHRI)\s*([^:\s]+)', text)
+        name_match = re.search(r'\b(MR|MR.|MRS|MS|SHRI)\.? (\S+)', text)
         details['accountholder'] = name_match.group(0) if name_match else "Not Found"
-        address_match = re.search(r'S/O\s*([^:\s]+)', text)
-        details['address'] = address_match.group(0) if address_match else "Not Found"
-        Test =re.search(r'\nEmail\s*:\s*[^\n]+\n(.+):\s', text)
-        details['address1'] = Test.group(1) if Test else "Not Found"
-        Test1 =re.search(r'CustID\s*:\s*[^\n]+\n(.+):\s', text)
-        details['address2'] = Test1.group(1) if Test1 else "Not Found"
+        address_match = re.search(r'State\s*:\s*([^\n]+)\n([^\n]+)\s*Phoneno\.', text)
+        details['address'] = address_match.group(2) if address_match else "Not Found"
+        address_match1 = re.search(r'(.*)(?=ODLimit)', text)
+        details['address1'] = address_match1.group(1) if address_match1 else "Not Found"
+        address_match2 = re.search(r'Currency\s*:\s*([^\n]+)\n([^\n]+)\s*Email', text)
+        details['address2'] = address_match2.group(2) if address_match2 else "Not Found"
+        address_match3 =re.search(r'(.*)(?=CustID)', text)
+        details['address3'] = address_match3.group(1) if address_match3 else "Not Found"
+        address_match4 =re.search(r'(.*)(?=AccountNo)', text)
+        details['address4'] = address_match4.group(1) if address_match4 else "Not Found"
+        jointholders =re.search(r'(.*?)\s*AccountStatus', text)
+        details['jointholders'] = jointholders.group(1) if jointholders else "Not Found"
+        odlimit =re.search(r'(\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*)Currency\s*:', text)
+        details['odlimit'] = odlimit.group(1) if odlimit else "Not Found"
 
         # Extract other details using regex patterns and keys
         patterns = {
             'branch': r'AccountBranch\s*:\s*([^\n\r]+)',
             'city': r'City\s*:\s*([^\n\r]+)',
             'state': r'State\s*:\s*([^\n\r]+)',
-            'phone': r'Phoneno.\s*:\s*(\d+)',
+            'phone': r'Phoneno\.\s*:\s*([\d-]+)',
+            'currency': r'Currency\s*:\s*(\S.*)',
             'email': r'Email\s*:\s*([^\n\r]+)',
             'cif': r'CustID\s*:\s*(\d+)',
             'opendate': r'A/COpenDate\s*:\s*([\d/]+)',

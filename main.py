@@ -3,10 +3,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 import os
+import re
 import pdfplumber
 import pandas as pd
 import psycopg2
 from sqlalchemy import create_engine, Table, MetaData, Column, Integer, String
+
+from sqlalchemy import MetaData, Table, Column, Integer, String, create_engine, select, insert
+from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.schema import CreateTable
+
 
 # Import your existing PDF extraction code
 from extract_key_value import Extraction
@@ -58,35 +64,45 @@ def index():
     return RedirectResponse('extract/docs')
 
 def insert_details(details):
-    cur = conn.cursor()
-    for column_name, value in details.items():
-        cur.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name='extraction_key_value' AND column_name=%s", (column_name,))
-        exists = cur.fetchone()
-        if not exists:
-            cur.execute(f"ALTER TABLE extraction_key ADD COLUMN {column_name} TEXT;")
-    insert_query = f"INSERT INTO extraction_key_value ({', '.join(details.keys())}) VALUES ({', '.join(['%s']*len(details))})"
-    cur.execute(insert_query, list(details.values()))
-    conn.commit()
-    # cur.close()
+    try:
+        cur = conn.cursor()
+        for column_name, value in details.items():
+            cur.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name='extraction_key_value' AND column_name=%s", (column_name,))
+            exists = cur.fetchone()
+            if not exists:
+                cur.execute(f"ALTER TABLE extraction_key_value ADD COLUMN {column_name} TEXT;")
+        insert_query = f"INSERT INTO extraction_key_value ({', '.join(details.keys())}) VALUES ({', '.join(['%s']*len(details))})"
+        cur.execute(insert_query, list(details.values()))
+        conn.commit()
+        cur.close()
+    except psycopg2.Error as e:
+        # Rollback the transaction
+        conn.rollback()
+        
 
-def create_or_update_transaction_table(trans):
-    cur = conn.cursor()
-    if trans:
-        metadata = MetaData()
-        table_name = 'extract_transaction_data'
-        table = Table(table_name, metadata, autoload_with=engine, extend_existing=True)
-        for column_name in trans[0].keys():
-            column_type = Integer if isinstance(trans[0][column_name], int) else String
-            if column_name not in table.columns:
-                table.append_column(Column(column_name, column_type))
-        metadata.create_all(engine)
+def create_or_update_transaction_table(trans,engine):
+    try:
+        cur = conn.cursor()
+        if trans:
+            metadata = MetaData()
+            table_name = 'extract_transaction_data'
+            table = Table(table_name, metadata,Column('id', Integer, primary_key=True, autoincrement=True), extend_existing=True)
+            for column_name in trans[0].keys():
+                column_type = Integer if isinstance(trans[0][column_name], int) else String
+                if column_name not in table.columns:
+                    table.append_column(Column(column_name, column_type))
+            metadata.create_all(engine)
 
-        with engine.connect() as conn1:
-            for row in trans:
-                insert_statement = table.insert().values(row)
-                conn1.execute(insert_statement)
-            conn1.commit()
-    # cur.close()
+            with engine.connect() as conn1:
+                for row in trans:
+                    insert_statement = table.insert().values(row)
+                    conn1.execute(insert_statement)
+                conn1.commit()
+        cur.close()
+    except psycopg2.Error as e:
+        # Rollback the transaction
+        conn.rollback()
+
 
 def get_docname(docid):
     cursor = conn.cursor()
@@ -160,9 +176,7 @@ def rating_calculation(applno):
     update_query = "UPDATE loandetails SET rating = %s WHERE applno = applno;"
     cur.execute(update_query, (total_score,))
     conn.commit()
-
     cur.close()
-    conn.close()
 
 @app.post("/extract/extract_details/")
 async def extract_details(docid: int):
@@ -170,10 +184,20 @@ async def extract_details(docid: int):
     if not os.path.exists(pdf_path):
         raise HTTPException(status_code=404, detail="PDF file not found")
     try:
+        details = {}
         with pdfplumber.open(pdf_path) as pdf:
             first_page = pdf.pages[0]
             info = first_page.extract_text()
-        bank = extract.classify_bank(info)
+        bankname1 = re.search(r'INDIAN BANK', info)
+        details['bankname'] = bankname1.group(0) if bankname1 else "Not Found"
+        for key, value in details.items():
+            details[key] = value
+
+        if details[key] == 'INDIAN BANK':
+            bank = 'INDIAN BANK'
+        else:
+            bank = extract.classify_bank(info)
+
         if bank == "STATE BANK OF INDIA":
             index = info.find('Search for')
             if index != -1:
@@ -188,6 +212,12 @@ async def extract_details(docid: int):
 
         elif bank == "HDFC Bank":
             details = extract.extract_key_value_hdfc(info)
+            details['docid'] = docid
+            details['bankname'] = bank
+            insert_details(details)
+
+        elif bank == "INDIAN BANK":
+            details = extract.extract_key_value_indian(info)
             details['docid'] = docid
             details['bankname'] = bank
             insert_details(details)
@@ -227,10 +257,20 @@ async def extract_transactions(docid: int):
         raise HTTPException(status_code=404, detail="PDF file not found")
 
     try:
+        details = {}
         with pdfplumber.open(pdf_path) as pdf:
             first_page = pdf.pages[0]
             info = first_page.extract_text()
-        bank = extract.classify_bank(info)
+        bankname1 = re.search(r'INDIAN BANK', info)
+        details['bankname1'] = bankname1.group(0) if bankname1 else "Not Found"
+        for key, value in details.items():
+            details[key] = value
+
+        if details[key] == 'INDIAN BANK':
+            bank = 'INDIAN BANK'
+        else:
+            bank = extract.classify_bank(info)
+
         if bank == "STATE BANK OF INDIA":
             index = info.find('Search for')
             if index != -1:
@@ -238,48 +278,76 @@ async def extract_transactions(docid: int):
                 columns =['Txn_Date','Description','ChequeNumber','Debit','Credit','Balance']
                 df = pd.DataFrame(trans, columns=columns)
                 df['docid'] = docid
+                df['bankname'] = bank
                 df = df[df['Description'] != 'Details']
                 df['Txn_Date'] = pd.to_datetime(df['Txn_Date'], format='%d %b %Y', errors='coerce')
                 trans = df.to_dict(orient='records')
-                create_or_update_transaction_table(trans)
+                create_or_update_transaction_table(trans,engine)
             else:
                 trans = transaction.extract_table_sbi(pdf_path)
                 columns =['Txn_Date','Value_Date','Description','ChequeNumber','Debit','Credit','Balance']
                 df = pd.DataFrame(trans, columns=columns)
                 df['docid'] = docid
+                df['bankname'] = bank
                 df = df[df['Txn_Date'] != 'Txn Date']
                 df['Txn_Date'] = pd.to_datetime(df['Txn_Date'], format='%d %b %Y', errors='coerce')
                 trans = df.to_dict(orient='records')
-                create_or_update_transaction_table(trans)
+                create_or_update_transaction_table(trans,engine)
 
         elif bank == "HDFC Bank":
             trans = transaction.extract_table_hdfc(pdf_path)
             trans['docid'] = docid
-            create_or_update_transaction_table(trans)
+            trans['bankname'] = bank
+            trans = trans.to_dict(orient='records')
+            create_or_update_transaction_table(trans,engine)
+
+        elif bank == "INDIAN BANK":
+            trans = transaction.extract_table_indian(pdf_path)
+            columns =['Txn_Date','Value_Date','RemitterBranch','Description','ChequeNumber','Debit','Credit','Balance']
+            df = pd.DataFrame(trans, columns=columns)
+            df['docid'] = docid
+            df['bankname'] = bank
+            df = df[df['Txn_Date'] != 'Value\nDate']
+            # df.loc[df['Txn_Date'] == '', 'Txn_date'] = '01-01-2000'
+            df['Txn_Date'] = df['Txn_Date'].astype(str).str.replace('\n', '')
+            # df['Txn_date']= df['Txn_date'].str.replace('\n', '')
+            df['Txn_Date'] = pd.to_datetime(df['Txn_Date'], errors='coerce')
+            df = df[df['Txn_Date'].notnull()]
+            trans = df.to_dict(orient='records')
+            create_or_update_transaction_table(trans,engine)
 
         elif bank == "UNION BANK OF INDIA":
             trans = transaction.extract_table_union(pdf_path)
             columns =['SerialNo','Txn_Date','TransactionId','Description','Amount','Balance']
             df = pd.DataFrame(trans, columns=columns)
             df['docid'] = docid
+            df['bankname'] = bank
+            df['Txn_Date'] = pd.to_datetime(df['Txn_Date'],errors='coerce')
+            df = df[df['Txn_Date'].notnull()]
             trans = df.to_dict(orient='records')
-            create_or_update_transaction_table(trans)
+            create_or_update_transaction_table(trans,engine)
 
         elif bank == "BANK OF BARODA":
             trans = transaction.extract_table_bob(pdf_path)
             columns =['SerialNo','Txn_Date','Value_Date','Description','ChequeNumber','Debit','Credit','Balance']
             df = pd.DataFrame(trans, columns=columns)
             df['docid'] = docid
+            df['bankname'] = bank
+            df['Txn_Date'] = pd.to_datetime(df['Txn_Date'],errors='coerce')
+            df = df[df['Txn_Date'].notnull()]
             trans = df.to_dict(orient='records')
-            create_or_update_transaction_table(trans)
+            create_or_update_transaction_table(trans,engine)
 
         elif bank == "AXIS BANK":
             trans = transaction.extract_table_axis(pdf_path)
             columns =['Txn_Date','ChequeNumber','Description','Debit','Credit','Balance','Init.Br']
             df = pd.DataFrame(trans, columns=columns)
             df['docid'] = docid
+            df['bankname'] = bank
+            df['Txn_Date'] = pd.to_datetime(df['Txn_Date'], errors='coerce')
+            df = df[df['Txn_Date'].notnull()]
             trans = df.to_dict(orient='records')
-            create_or_update_transaction_table(trans)
+            create_or_update_transaction_table(trans,engine)
         else:
             raise ValueError("Bank not supported")
 

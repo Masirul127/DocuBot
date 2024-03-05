@@ -5,7 +5,7 @@ class Transaction:
         pass
 
     def classify_trans(self,df):
-        columns =['id','docid','SerialNo','TransactionId','Txn_Date','Value_Date','Description','ChequeNumber','Amount','Debit','Credit','Balance','Init.Br']
+        columns =['id','docid','SerialNo','TransactionId','Txn_Date','Value_Date','Description','ChequeNumber','Amount','Debit','Credit','Balance','Init.Br','bankname','RemitterBranch']
         df = pd.DataFrame(df,columns=columns)
         trans = df.to_dict(orient='records')
         '''
@@ -87,7 +87,7 @@ class Transaction:
         return (pd.concat([df, pd.DataFrame(money, columns=["flow"]), pd.DataFrame(type, columns=["type"])], axis=1))
 
     def distinct_months(self,df):
-        columns =['id','docid','SerialNo','TransactionId','Txn_Date','Value_Date','Description','ChequeNumber','Amount','Debit','Credit','Balance','Init.Br']
+        columns =['id','docid','SerialNo','TransactionId','Txn_Date','Value_Date','Description','ChequeNumber','Amount','Debit','Credit','Balance','Init.Br','bankname','RemitterBranch']
         df = pd.DataFrame(df,columns=columns)
         trans = df.to_dict(orient='records')
         df = pd.DataFrame(trans)

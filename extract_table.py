@@ -13,6 +13,15 @@ class ExtractTable:
                     all_tables.extend(tables)
         return all_tables
 
+    def extract_table_indian(self,path):
+        with pdfplumber.open(path) as pdf:
+            all_tables = []
+            for page in pdf.pages:
+                tables = page.extract_table()
+                if tables:
+                    all_tables.extend(tables)
+        return all_tables
+
     def extract_table_union(self,path):
         with pdfplumber.open(path) as pdf:
             all_tables = []
@@ -88,4 +97,6 @@ class ExtractTable:
                 deatils_table =self.extract_table_details_hdfc(tables,page)
                 dfs_list.append(deatils_table)
             concatenated_df = pd.concat(dfs_list)
-        return concatenated_df.to_dict(orient='records')
+            concatenated_df['Txn_Date'] = pd.to_datetime(concatenated_df['Txn_Date'], errors='coerce')
+            concatenated_df = concatenated_df[concatenated_df['Txn_Date'].notnull()]
+        return concatenated_df
