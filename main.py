@@ -9,11 +9,6 @@ import pandas as pd
 import psycopg2
 from sqlalchemy import create_engine, Table, MetaData, Column, Integer, String
 
-from sqlalchemy import MetaData, Table, Column, Integer, String, create_engine, select, insert
-from sqlalchemy.exc import ProgrammingError
-from sqlalchemy.schema import CreateTable
-
-
 # Import your existing PDF extraction code
 from extract_key_value import Extraction
 from extract_table import ExtractTable
