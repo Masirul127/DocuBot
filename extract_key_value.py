@@ -109,7 +109,7 @@ class Extraction:
             'accountno': r'Account Number\s*:\s*(\d+)',
             'producttype': r'Product type\s*:\s*(\S+)',
             'email': r'Email\s*:\s*([\w\.-]+@[\w\.-]+)',
-            'statementdate': r'(.*?)\nCleared Balance',
+            'statementdate': r'Statement Date :(.+?)\nCleared Balance',
             'clearedbalance': r'Cleared Balance\s*:\s*(\d+\.\d+)',
             'unclearedamount': r'Uncleared Amount\s*:\s*(\d+\.\d+)',
             'drawingpower': r'Drawing Power\s*:\s*(\d+\.\d+)',
@@ -228,7 +228,7 @@ class Extraction:
         details['micrcode'] = parts3[1]
         # index_AccountFrom_To = data_list.index('        Account Statement from 01-04-2023 to    30-06-2023    ')
         AccountFrom_To_Value = data_list[0]
-        details['accountstatementdate'] = AccountFrom_To_Value
+        details['statementperiod'] = AccountFrom_To_Value
         index_customerAdd_BranchAdd = data_list.index('Customer Address                                        Branch Address')
         customerAdd_BranchAdd_Value1 = data_list[index_customerAdd_BranchAdd + 1]
         parts4 = customerAdd_BranchAdd_Value1.split("        ")
@@ -298,4 +298,39 @@ class Extraction:
         details['address1'] = address1_match.group(2) if address1_match else "Not Found"
         address2_match = re.search(r'IFSC Code :(\w+)\n(.*?)MICR Code', data, re.DOTALL)
         details['address2'] = address2_match.group(2) if address2_match else "Not Found"
+        return details
+
+    def extract_key_value_yes(self,text):
+        details = {}
+        pattern = r'Address:(.*?)\nIFSC'
+        match = re.search(pattern, text, re.DOTALL)
+        data_between_product_and_email = match.group(1).strip().split('\n')
+        details['bankaddress1'] = data_between_product_and_email[2]
+        details['address2'] = data_between_product_and_email[1]
+        details['address3'] = data_between_product_and_email[3]
+
+        pattern1 = r'MICR:(.*?)\nCustId'
+        match = re.search(pattern1, text, re.DOTALL)
+        data_after_MICR = match.group(1).strip().split('\n')
+        details['address4'] = data_after_MICR[1]
+        details['email'] = data_after_MICR[2]
+        patterns = {
+        "accountholder": r'\n(.*?)YourBranchDetails:',
+        "accountno": r'ACCOUNTNo\.(\d+)', 
+        "cif": r'CustId:(\d+)',
+        "micrcode": r'MICR:(\d+)',
+        "ifsc": r'IFSC:([A-Z0-9]+)',
+        "address": r'\n(.*?)Name:',
+        "address1": r'\n(.*?)\nAddress:',
+        "bankaddress": r'Address:(.*?)\n',
+        "branch": r'Name:(.*?)\n',
+        "currency": r'Currency:([A-Z]+)',
+        "statementperiod": r'Period:(.*?)\n'
+        }
+
+        # Extract key-value pairs using regular expressions
+        for key, pattern in patterns.items():
+            match = re.search(pattern, text)
+            if match:
+                details[key] = match.group(1).strip()
         return details

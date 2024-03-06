@@ -40,13 +40,26 @@ class ExtractTable:
                     all_tables.extend(tables)
         return all_tables
 
+    def extract_table_yes(self,path):
+        with pdfplumber.open(path) as pdf:
+            all_tables = []
+            for page in pdf.pages:
+                # table_settings_BOB = {"vertical_strategy": "text","horizontal_strategy": "lines","snap_tolerance": 7,"min_words_vertical": 4,"snap_x_tolerance": 7,"snap_y_tolerance": 7,"join_tolerance": 7,"join_x_tolerance": 7,"join_y_tolerance": 7}
+                table_settings_BOB = {"vertical_strategy": "text","horizontal_strategy": "lines",
+                "snap_tolerance": 7,"min_words_vertical": 12,"snap_x_tolerance": 7,"snap_y_tolerance": 7,"join_tolerance": 7,
+                "join_x_tolerance": 7,"join_y_tolerance": 7}
+                tables = page.extract_table(table_settings_BOB)
+                if tables:
+                    all_tables.extend(tables)
+        return all_tables
+
     def extract_table_bob(self,path):
         with pdfplumber.open(path) as pdf:
             all_tables = []
             for page in pdf.pages:
                 # table_settings_BOB = {"vertical_strategy": "text","horizontal_strategy": "lines","snap_tolerance": 7,"min_words_vertical": 4,"snap_x_tolerance": 7,"snap_y_tolerance": 7,"join_tolerance": 7,"join_x_tolerance": 7,"join_y_tolerance": 7}
                 table_settings_BOB = {"vertical_strategy": "text","horizontal_strategy": "lines",
-                "snap_tolerance": 7,"min_words_vertical": 1,"snap_x_tolerance": 7,"snap_y_tolerance": 7,"join_tolerance": 7,
+                "snap_tolerance": 7,"min_words_vertical": 8,"edge_min_length":8,"snap_x_tolerance": 7,"snap_y_tolerance": 7,"join_tolerance": 7,
                 "join_x_tolerance": 7,"join_y_tolerance": 7}
                 tables = page.extract_table(table_settings_BOB)
                 if tables:
@@ -97,6 +110,6 @@ class ExtractTable:
                 deatils_table =self.extract_table_details_hdfc(tables,page)
                 dfs_list.append(deatils_table)
             concatenated_df = pd.concat(dfs_list)
-            concatenated_df['Txn_Date'] = pd.to_datetime(concatenated_df['Txn_Date'], errors='coerce')
+            concatenated_df['Txn_Date'] = pd.to_datetime(concatenated_df['Txn_Date'].str.strip(), format='%d/%m/%y', errors='coerce')
             concatenated_df = concatenated_df[concatenated_df['Txn_Date'].notnull()]
         return concatenated_df

@@ -103,9 +103,9 @@ def get_docname(docid):
     cursor = conn.cursor()
     query = "SELECT docname FROM loadedfiles WHERE id = %s"
     cursor.execute(query, (docid,))
-    docname = cursor.fetchone()[0]  # Fetch the first column of the first row
+    docname = cursor.fetchone()  # Fetch the first column of the first row
     cursor.close()
-    return docname
+    return docname[0] if docname else None
 
 def loadedfiles_id(applno):
     cursor = conn.cursor()
@@ -114,6 +114,39 @@ def loadedfiles_id(applno):
     ids = cursor.fetchall()
     cursor.close()
     return ids
+
+def get_key_value_id(docid):
+    cursor = conn.cursor()
+    query = "SELECT docid FROM extraction_key_value WHERE docid = %s"
+    cursor.execute(query, (docid,))
+    match_id = cursor.fetchone()
+    cursor.close()
+    return match_id[0] if match_id else None
+
+def get_key_value_data(account_num):
+    cursor = conn.cursor()
+    query = "SELECT docid,accountno,statementperiod,statementperiodfrom,statementperiodto FROM extraction_key_value WHERE accountno = %s"
+    cursor.execute(query, (account_num,))
+    match_id = cursor.fetchone()
+    cursor.close()
+    if match_id:
+        return {
+            "docid" :match_id[0],
+            "accountno": match_id[1],
+            "statementperiod": match_id[2],
+            "statementperiodfrom": match_id[3],
+            "statementperiodto": match_id[4]
+        }
+    else:
+        return None
+
+def get_transaction_id(docid):
+    cursor = conn.cursor()
+    query = "SELECT docid FROM extract_transaction_data WHERE docid = %s"
+    cursor.execute(query, (docid,))
+    match_id = cursor.fetchone()
+    cursor.close()
+    return match_id[0] if match_id else None
 
 def get_transaction_data(ids):
     all_data = []
@@ -175,6 +208,11 @@ def rating_calculation(applno):
 
 @app.post("/extract/extract_details/")
 async def extract_details(docid: int):
+    message = "Default message"
+    get_id = get_key_value_id(docid)
+    if get_id == docid:
+        raise HTTPException(status_code=200, detail="Details Already extracted and inserted into the DB")
+
     pdf_path = get_docname(docid)
     if not os.path.exists(pdf_path):
         raise HTTPException(status_code=404, detail="PDF file not found")
@@ -199,28 +237,46 @@ async def extract_details(docid: int):
                 details = extract.extract_key_value_sbi_yono(info)
                 details['docid'] = docid
                 details['bankname'] = bank
+                account_num = details['accountno']
             else:
                 details = extract.extract_key_value_sbi(info)
                 details['docid'] = docid
                 details['bankname'] = bank
+                account_num = details['accountno']
+            check_data_present = get_key_value_data(account_num)
+            if check_data_present is not None and details.get('statementperiod') == check_data_present.get('statementperiod'):
+                raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
             insert_details(details)
 
         elif bank == "HDFC Bank":
             details = extract.extract_key_value_hdfc(info)
             details['docid'] = docid
             details['bankname'] = bank
+            account_num = details['accountno']
+            check_data_present = get_key_value_data(account_num)
+            if check_data_present is not None and details.get('statementperiodfrom') == check_data_present.get('statementperiodfrom') and details.get('statementperiodto') == check_data_present.get('statementperiodto'):
+                raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
             insert_details(details)
 
         elif bank == "INDIAN BANK":
             details = extract.extract_key_value_indian(info)
+            details['address'] = ', '.join(details['address'])
             details['docid'] = docid
             details['bankname'] = bank
+            account_num = details['accountno']
+            check_data_present = get_key_value_data(account_num)
+            if check_data_present is not None and details.get('statementperiod') == check_data_present.get('statementperiod'):
+                raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
             insert_details(details)
 
         elif bank == "UNION BANK OF INDIA":
             details = extract.extract_key_value_union(info)
             details['docid'] = docid
             details['bankname'] = bank
+            account_num = details['accountno']
+            check_data_present = get_key_value_data(account_num)
+            if check_data_present is not None and details.get('statementperiodfrom') == check_data_present.get('statementperiodfrom') and details.get('statementperiodto') == check_data_present.get('statementperiodto'):
+                raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
             insert_details(details)
 
         elif bank == "BANK OF BARODA":
@@ -228,25 +284,56 @@ async def extract_details(docid: int):
             details = extract.extract_key_value_bob(text_with_coords_bob)
             details['docid'] = docid
             details['bankname'] = bank
+            account_num = details['accountno']
+            check_data_present = get_key_value_data(account_num)
+            if check_data_present is not None and details.get('statementperiod') == check_data_present.get('statementperiod'):
+                raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
             insert_details(details)
 
         elif bank == "AXIS BANK":
             details = extract.extract_key_value_axis(info)
             details['docid'] = docid
             details['bankname'] = bank
+            account_num = details['accountno']
+            check_data_present = get_key_value_data(account_num)
+            if check_data_present is not None and details.get('statementperiodfrom') == check_data_present.get('statementperiodfrom') and details.get('statementperiodto') == check_data_present.get('statementperiodto'):
+                raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
+            insert_details(details)
+
+        elif bank == "YES BANK":
+            details = extract.extract_key_value_yes(info)
+            details['docid'] = docid
+            details['bankname'] = bank
+            account_num = details['accountno']
+            check_data_present = get_key_value_data(account_num)
+            if check_data_present is not None and details.get('statementperiod') == check_data_present.get('statementperiod'):
+                raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
             insert_details(details)
         else:
             raise ValueError("Bank not supported")
 
         message = "Details extracted successfully"
+    
+    except HTTPException as e:
+        raise e
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="PDF file not found")
     except Exception as e:
-        message = f"Error extracting details: {str(e)}"
+        raise HTTPException(status_code=500, detail=f"Error extracting details: {str(e)}")
 
     return Details(message=message)
-
+    
 
 @app.post("/extract/extract_transactions/")
 async def extract_transactions(docid: int):
+    transaction_id = get_transaction_id(docid)
+    if transaction_id == docid:
+        raise HTTPException(status_code=200, detail="Table Data Already parsed and inserted into the DB")
+
+    duplicate_insertion = get_key_value_id(docid)
+    if duplicate_insertion is None:
+        raise HTTPException(status_code=409, detail="Transaction data cannot be  parsed as Key_values are not parsed for rhis docid.")
+
     pdf_path = get_docname(docid)
     if not os.path.exists(pdf_path):
         raise HTTPException(status_code=404, detail="PDF file not found")
@@ -303,10 +390,10 @@ async def extract_transactions(docid: int):
             df['docid'] = docid
             df['bankname'] = bank
             df = df[df['Txn_Date'] != 'Value\nDate']
-            # df.loc[df['Txn_Date'] == '', 'Txn_date'] = '01-01-2000'
             df['Txn_Date'] = df['Txn_Date'].astype(str).str.replace('\n', '')
-            # df['Txn_date']= df['Txn_date'].str.replace('\n', '')
-            df['Txn_Date'] = pd.to_datetime(df['Txn_Date'], errors='coerce')
+            df['Value_Date'] = df['Value_Date'].astype(str).str.replace('\n', '')
+            df['Txn_Date'] = df['Txn_Date'].replace('', '01/01/2018')
+            df['Txn_Date'] = pd.to_datetime(df['Txn_Date'].str.strip(), format='%d/%m/%Y', errors='coerce')
             df = df[df['Txn_Date'].notnull()]
             trans = df.to_dict(orient='records')
             create_or_update_transaction_table(trans,engine)
@@ -315,20 +402,23 @@ async def extract_transactions(docid: int):
             trans = transaction.extract_table_union(pdf_path)
             columns =['SerialNo','Txn_Date','TransactionId','Description','Amount','Balance']
             df = pd.DataFrame(trans, columns=columns)
+            df['Debit'] = df['Amount'].apply(lambda x: x.split(' ')[0] if '(Dr)' in x else '')
+            df['Credit'] = df['Amount'].apply(lambda x: x.split(' ')[0] if '(Cr)' in x else '')
             df['docid'] = docid
             df['bankname'] = bank
-            df['Txn_Date'] = pd.to_datetime(df['Txn_Date'],errors='coerce')
+            df['Txn_Date'] = pd.to_datetime(df['Txn_Date'].str.strip(), format='%d/%m/%Y',errors='coerce')
             df = df[df['Txn_Date'].notnull()]
             trans = df.to_dict(orient='records')
             create_or_update_transaction_table(trans,engine)
 
         elif bank == "BANK OF BARODA":
             trans = transaction.extract_table_bob(pdf_path)
-            columns =['SerialNo','Txn_Date','Value_Date','Description','ChequeNumber','Debit','Credit','Balance']
+            trans = [[row[0].split(' ')[0], row[0].split(' ')[1]] + row[1:] if row[0] is not None and ' ' in row[0] else row for row in trans]
+            columns =['SerialNo','Txn_Date','Value_Date','Description','Debit','Credit','Balance']
             df = pd.DataFrame(trans, columns=columns)
             df['docid'] = docid
             df['bankname'] = bank
-            df['Txn_Date'] = pd.to_datetime(df['Txn_Date'],errors='coerce')
+            df['Txn_Date'] = pd.to_datetime(df['Txn_Date'].str.strip(), format='%d-%m-%Y',errors='coerce')
             df = df[df['Txn_Date'].notnull()]
             trans = df.to_dict(orient='records')
             create_or_update_transaction_table(trans,engine)
@@ -339,7 +429,18 @@ async def extract_transactions(docid: int):
             df = pd.DataFrame(trans, columns=columns)
             df['docid'] = docid
             df['bankname'] = bank
-            df['Txn_Date'] = pd.to_datetime(df['Txn_Date'], errors='coerce')
+            df['Txn_Date'] = pd.to_datetime(df['Txn_Date'].str.strip(), format='%d-%m-%Y', errors='coerce')
+            df = df[df['Txn_Date'].notnull()]
+            trans = df.to_dict(orient='records')
+            create_or_update_transaction_table(trans,engine)
+
+        elif bank == "YES BANK":
+            trans = transaction.extract_table_yes(pdf_path)
+            columns =['Txn_Date','Value_Date','Description','Debit','Credit','Balance']
+            df = pd.DataFrame(trans, columns=columns)
+            df['docid'] = docid
+            df['bankname'] = bank
+            df['Txn_Date'] = pd.to_datetime(df['Txn_Date'].str.strip(), format='%d/%m/%Y', errors='coerce')
             df = df[df['Txn_Date'].notnull()]
             trans = df.to_dict(orient='records')
             create_or_update_transaction_table(trans,engine)
@@ -347,10 +448,15 @@ async def extract_transactions(docid: int):
             raise ValueError("Bank not supported")
 
         message = "Transactions extracted successfully"
-    except Exception as e:
-        message = f"Error extracting transactions: {str(e)}"
 
-    return Transactions(message=message)
+    except HTTPException as e:
+        raise e
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="PDF file not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error extracting details: {str(e)}")
+
+    return Details(message=message)
 
 @app.post("/extract/rating/")
 async def rating(applno: str):

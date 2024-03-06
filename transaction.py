@@ -104,13 +104,22 @@ class Transaction:
         df['Month'] = df['Txn_Date'].dt.to_period('M')
         grouped_df = df.groupby(['Month', 'Debit']).agg({'Txn_Date': list, 'Label': list}).reset_index()
         
-        # Filter debits that are repeated at least `months` times
-        repeated_debits = df['Debit'].value_counts()[df['Debit'].value_counts() > 1].index
-        repeated_df = df[df['Debit'].isin(repeated_debits)]
+        if months == 1:
+            # Filter debits that are repeated at least `months` times
+            repeated_debits = df['Debit'].value_counts()[df['Debit'].value_counts() >= 1].index
+            repeated_df = df[df['Debit'].isin(repeated_debits)]
 
-        # Filter debits that are repeated less than `months` times
-        repeated_debits1 = df['Debit'].value_counts()[df['Debit'].value_counts() < 2].index
-        repeated_df1 = df[df['Debit'].isin(repeated_debits1)]
+            # Filter debits that are repeated less than `months` times
+            repeated_debits1 = df['Debit'].value_counts()[df['Debit'].value_counts() <= months].index
+            repeated_df1 = df[df['Debit'].isin(repeated_debits1)]
+        else:
+            # Filter debits that are repeated at least `months` times
+            repeated_debits = df['Debit'].value_counts()[df['Debit'].value_counts() > 1].index
+            repeated_df = df[df['Debit'].isin(repeated_debits)]
+
+            # Filter debits that are repeated less than `months` times
+            repeated_debits1 = df['Debit'].value_counts()[df['Debit'].value_counts() < months].index
+            repeated_df1 = df[df['Debit'].isin(repeated_debits1)]
         
         # Filter debits above 2000 and its label != 'loan' for each month
         high_debits_not_loan = repeated_df[(repeated_df['Debit'] > 2000) & (repeated_df['Label'] != 'loan')]
@@ -139,19 +148,28 @@ class Transaction:
 
     def repeated_credits(self, df, months):
         # Convert 'Txn_Date' to datetime if it's not already
-        df['Txn_Date'] = pd.to_datetime(df['Txn_Date'])
+        # df['Txn_Date'] = pd.to_datetime(df['Txn_Date'])
         
         # Group by month and credit amount
         df['Month'] = df['Txn_Date'].dt.to_period('M')
         grouped_df = df.groupby(['Month', 'Credit']).agg({'Txn_Date': list, 'Label': list}).reset_index()
         
-        # Filter credits that are repeated at least `months` times
-        repeated_credits = df['Credit'].value_counts()[df['Credit'].value_counts() > 1].index
-        repeated_df = df[df['Credit'].isin(repeated_credits)]
+        if months == 1:
+            # Filter credits that are repeated at least `months` times
+            repeated_credits = df['Credit'].value_counts()[df['Credit'].value_counts() >= 1].index
+            repeated_df = df[df['Credit'].isin(repeated_credits)]
 
-        # Filter credits that are repeated less than `months` times
-        repeated_credits1 = df['Credit'].value_counts()[df['Credit'].value_counts() < 2].index
-        repeated_df1 = df[df['Credit'].isin(repeated_credits1)]
+            # Filter credits that are repeated less than `months` times
+            repeated_credits1 = df['Credit'].value_counts()[df['Credit'].value_counts() <= months].index
+            repeated_df1 = df[df['Credit'].isin(repeated_credits1)]
+        else:
+            # Filter credits that are repeated at least `months` times
+            repeated_credits = df['Credit'].value_counts()[df['Credit'].value_counts() > 1].index
+            repeated_df = df[df['Credit'].isin(repeated_credits)]
+
+            # Filter credits that are repeated less than `months` times
+            repeated_credits1 = df['Credit'].value_counts()[df['Credit'].value_counts() < months].index
+            repeated_df1 = df[df['Credit'].isin(repeated_credits1)]
         
         # Filter credits above 2000 and its label != 'loan' for each month
         high_credits = repeated_df[(repeated_df['Credit'] > 2000) & (repeated_df['Label'] != 'loan') & (repeated_df['Label'] != 'salary')]
