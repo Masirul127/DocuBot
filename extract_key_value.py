@@ -57,7 +57,7 @@ class Extraction:
             'ifsc': r'IFS Code\s*:\s*([^\n]+)\n\(Indian Financial System\)\n',
             'micrcode': r'MICR Code\s*:\s*([^\n]+)\n\(Magnetic Ink Character Recognition\)\n',
             'nominationregistered': r'Nomination Registered\s*:\s*([^\n]+)\n',
-            'balanceamount': r'Balance as on \d+ \w+ \d+ :([\d.]+)'
+            'balanceamount': r"Balance as on 1 Feb 2023 :([\d,.]+)"
         }
         for key, pattern in patterns.items():
             match = re.search(pattern, cleaned_text)

@@ -1,7 +1,8 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException,File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
+from pydantic.typing import List
 import os
 import re
 import pdfplumber
@@ -49,6 +50,14 @@ class Transactions(BaseModel):
 
 class Rating(BaseModel):
     message: str
+
+class Uploaddocument(BaseModel):
+    message: str
+
+UPLOAD_FOLDER = './uploads'
+isdir = os.path.isdir(UPLOAD_FOLDER)
+if not isdir:
+    os.makedirs(UPLOAD_FOLDER)
 
 extract = Extraction()
 transaction = ExtractTable()
@@ -178,6 +187,12 @@ def update_loan_details(applno,gross_income,expenses,emi):
     conn.commit()
     cursor.close()
 
+def insert_loadedfiles_path(applno,filepath):
+    cursor = conn.cursor()
+    query = "INSERT INTO loadedfiles (applno, docname) VALUES (%s, %s)"
+    cursor.execute(query, (applno, filepath))
+    conn.commit()
+    cursor.close()
 
 def rating_calculation(applno):
     cur = conn.cursor()
@@ -205,6 +220,24 @@ def rating_calculation(applno):
     cur.execute(update_query, (total_score/4,))
     conn.commit()
     cur.close()
+
+@app.post("/extract/uploaddocument/")
+async def uploaddocument(applno: str,files: List[UploadFile] = File(...)):
+    try:
+        for file in files:
+            name = file.filename.split('.')[0]
+            ext = file.filename.split('.')[-1]
+            file_path = f'{UPLOAD_FOLDER}/{name}.{ext}'
+            with open(file_path, 'wb+') as f:
+                f.write(file.file.read())
+            f.close()
+
+            insert_loadedfiles_path(applno,file_path)
+        message = "Documents and its applno are inserted in the loadedfiles table successfully"
+    except Exception as e:
+        message = f"Error In Uploading Documents and its applno: {str(e)}"
+
+    return Uploaddocument(message=message) 
 
 @app.post("/extract/extract_details/")
 async def extract_details(docid: int):
