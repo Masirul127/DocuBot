@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException,File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
-from pydantic.typing import List
+from typing import List
 import os
 import re
 import pdfplumber
