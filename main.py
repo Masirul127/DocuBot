@@ -9,6 +9,7 @@ import pdfplumber
 import pandas as pd
 import psycopg2
 from sqlalchemy import create_engine, Table, MetaData, Column, Integer, String
+from sqlalchemy.exc import SQLAlchemyError
 
 # Import your existing PDF extraction code
 from extract_key_value import Extraction
@@ -78,35 +79,35 @@ def insert_details(details):
         insert_query = f"INSERT INTO extraction_key_value ({', '.join(details.keys())}) VALUES ({', '.join(['%s']*len(details))})"
         cur.execute(insert_query, list(details.values()))
         conn.commit()
-        cur.close()
     except psycopg2.Error as e:
+        # Log or handle the error
+        print(f"Error inserting details: {e}")
         # Rollback the transaction
         conn.rollback()
+    finally:
+        cur.close()
         
+def create_or_update_transaction_table(trans, engine):
+    metadata = MetaData()
+    table_name = 'extract_transaction_data'
+    table = Table(table_name, metadata,Column('id', Integer, primary_key=True, autoincrement=True), extend_existing=True)
+    for column_name in trans[0].keys():
+        column_type = Integer if isinstance(trans[0][column_name], int) else String
+        if column_name not in table.columns:
+            table.append_column(Column(column_name, column_type))
 
-def create_or_update_transaction_table(trans,engine):
-    try:
-        cur = conn.cursor()
-        if trans:
-            metadata = MetaData()
-            table_name = 'extract_transaction_data'
-            table = Table(table_name, metadata,Column('id', Integer, primary_key=True, autoincrement=True), extend_existing=True)
-            for column_name in trans[0].keys():
-                column_type = Integer if isinstance(trans[0][column_name], int) else String
-                if column_name not in table.columns:
-                    table.append_column(Column(column_name, column_type))
-            metadata.create_all(engine)
+    metadata.create_all(engine)
 
-            with engine.connect() as conn1:
-                for row in trans:
-                    insert_statement = table.insert().values(row)
-                    conn1.execute(insert_statement)
-                conn1.commit()
-        cur.close()
-    except psycopg2.Error as e:
-        # Rollback the transaction
-        conn.rollback()
-
+    with engine.begin() as conn:
+        try:
+            for row in trans:
+                insert_statement = table.insert().values(**row)
+                conn.execute(insert_statement)
+        except SQLAlchemyError as e:
+            # Log or handle the error
+            print(f"Error inserting details: {e}")
+            # Rollback the transaction if needed
+            conn.rollback()
 
 def get_docname(docid):
     cursor = conn.cursor()
@@ -182,17 +183,22 @@ def update_loan_details(applno,gross_income,expenses,emi):
         raise ValueError("Income must be greater than 0")
     
     cursor = conn.cursor()
-    query = "UPDATE loandetails SET income = %s, expenses = %s, rir =  %s/ %s * 100.00 WHERE applno = %s AND %s > 0"
+    query = "UPDATE loandetails SET income = %s, expenses = %s, rir = (%s/ %s) * 100.00 WHERE applno = %s AND %s > 0"
     cursor.execute(query, (gross_income, expenses,emi, gross_income, applno, gross_income))
     conn.commit()
     cursor.close()
 
-def insert_loadedfiles_path(applno,filepath):
-    cursor = conn.cursor()
-    query = "INSERT INTO loadedfiles (applno, docname) VALUES (%s, %s)"
-    cursor.execute(query, (applno, filepath))
-    conn.commit()
-    cursor.close()
+def insert_loadedfiles_path(applno, filepath):
+    try:
+        cursor = conn.cursor()
+        query = "INSERT INTO loadedfiles (applno, docname) VALUES (%s, %s)"
+        cursor.execute(query, (applno, filepath))
+        conn.commit()
+    except Exception as e:
+        print(f"Error inserting record: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
 
 def rating_calculation(applno):
     cur = conn.cursor()
