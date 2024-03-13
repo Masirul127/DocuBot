@@ -32,13 +32,13 @@ app.add_middleware(
 )
 
 conn = psycopg2.connect(
-    dbname="Docubot",
+    dbname="rating",
     user="postgres",
     password="postgres",
     host="localhost",
     port="5432"
 )
-engine = create_engine('postgresql://postgres:postgres@localhost/Docubot')
+engine = create_engine('postgresql://postgres:postgres@localhost/rating')
 
 class PDFPath(BaseModel):
     path: str
