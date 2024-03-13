@@ -279,6 +279,7 @@ async def extract_details(docid: int):
                 account_num = details['accountno']
             else:
                 details = extract.extract_key_value_sbi(info)
+                details['address'] = details['address'].replace("\n", " ")
                 details['docid'] = docid
                 details['bankname'] = bank
                 account_num = details['accountno']
@@ -289,6 +290,7 @@ async def extract_details(docid: int):
 
         elif bank == "HDFC Bank":
             details = extract.extract_key_value_hdfc(info)
+            details['bankaddress'] = details['bankaddress'].replace("\n", " ")
             details['docid'] = docid
             details['bankname'] = bank
             account_num = details['accountno']
@@ -371,7 +373,7 @@ async def extract_transactions(docid: int):
 
     duplicate_insertion = get_key_value_id(docid)
     if duplicate_insertion is None:
-        raise HTTPException(status_code=409, detail="Transaction data cannot be  parsed as Key_values are not parsed for rhis docid.")
+        raise HTTPException(status_code=409, detail="Transaction data cannot be  parsed as Key_values are not parsed for this docid.")
 
     pdf_path = get_docname(docid)
     if not os.path.exists(pdf_path):

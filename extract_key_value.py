@@ -31,7 +31,7 @@ class Extraction:
         details = {}
         cleaned_text = text.replace('(cid:9)', '')
         #Extracting Account Number
-        account_number = re.search(r'Account Number :(\d+)\n', cleaned_text)
+        account_number = re.search(r'Account Number :\s*(\d+)', cleaned_text)
         details['accountno'] = account_number.group(1) if account_number else "Not Found"
         #Extracting Account Name
         account_name = re.search(r'Account Name :(.*?)\n', cleaned_text)
@@ -45,19 +45,20 @@ class Extraction:
         #Extracting account statement date
         account_statement = re.search(r'Account Statement from \d+ \w+ \d+ to \d+ \w+ \d+', cleaned_text)
         details['statementperiod'] = account_statement.group(0) if account_statement else "Not Found"
+        balanceamount = re.search(r"Balance as on (\d{1,2} \w{3} \d{4}) :[\n\s]*([\d,.]+)", cleaned_text)
+        details['balanceamount'] = balanceamount.group(2) if balanceamount else "Not Found"
         # Extract other details using regex patterns and keys
         patterns = {
             'date': r'Date\s*:\s*([^\n]+)\n',
             'accountdescription': r'Account Description\s*:\s*([^\n]+)\n',
             'branch': r'Branch\s*:\s*([^\n]+)\n',
             'drawingpower': r'Drawing Power\s*:\s*([^\n]+)\n',
-            'interestrate': r'Interest Rate\(% p\.a\.\) :([\d.]+)\n',
+            'interestrate': r'Interest Rate\(% p\.a.\) :\s*([0-9.]+)',
             'modbalance': r'MOD Balance\s*:\s*([^\n]+)\n',
             'cif': r'CIF No\.\s*:\s*([^\n]+)\n',
             'ifsc': r'IFS Code\s*:\s*([^\n]+)\n\(Indian Financial System\)\n',
             'micrcode': r'MICR Code\s*:\s*([^\n]+)\n\(Magnetic Ink Character Recognition\)\n',
-            'nominationregistered': r'Nomination Registered\s*:\s*([^\n]+)\n',
-            'balanceamount': r"Balance as on 1 Feb 2023 :([\d,.]+)"
+            'nominationregistered': r'Nomination Registered\s*:\s*([^\n]+)\n'
         }
         for key, pattern in patterns.items():
             match = re.search(pattern, cleaned_text)
