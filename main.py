@@ -52,8 +52,13 @@ class Transactions(BaseModel):
 class Rating(BaseModel):
     message: str
 
+class InsertedFile(BaseModel):
+    id: int
+    file_path: str
+
 class Uploaddocument(BaseModel):
     message: str
+    inserted_ids: List[InsertedFile]
 
 UPLOAD_FOLDER = './uploads'
 isdir = os.path.isdir(UPLOAD_FOLDER)
@@ -150,6 +155,14 @@ def get_key_value_data(account_num):
     else:
         return None
 
+def get_loadedfiles_data(conn,applno,file_path):
+    cursor = conn.cursor()
+    query = "SELECT id FROM loadedfiles l WHERE applno = %s and docname = %s"
+    cursor.execute(query, (applno,file_path))
+    match_id = cursor.fetchone()
+    cursor.close()
+    return match_id[0] if match_id else None
+
 def get_transaction_id(docid):
     cursor = conn.cursor()
     query = "SELECT docid FROM extract_transaction_data WHERE docid = %s"
@@ -188,17 +201,20 @@ def update_loan_details(applno,gross_income,expenses,emi):
     conn.commit()
     cursor.close()
 
-def insert_loadedfiles_path(applno, filepath):
+def insert_loadedfiles_path(conn,applno, filepath):
     try:
         cursor = conn.cursor()
-        query = "INSERT INTO loadedfiles (applno, docname) VALUES (%s, %s)"
+        query = "INSERT INTO loadedfiles (applno, docname) VALUES (%s, %s) RETURNING id"
         cursor.execute(query, (applno, filepath))
+        inserted_id = cursor.fetchone()[0]
         conn.commit()
     except Exception as e:
         print(f"Error inserting record: {e}")
         conn.rollback()
+        raise
     finally:
         cursor.close()
+    return inserted_id
 
 def rating_calculation(applno):
     cur = conn.cursor()
@@ -230,20 +246,40 @@ def rating_calculation(applno):
 @app.post("/extract/uploaddocument/")
 async def uploaddocument(applno: str,files: List[UploadFile] = File(...)):
     try:
+        inserted_ids = []
+        already_present_files = []
         for file in files:
             name = file.filename.split('.')[0]
             ext = file.filename.split('.')[-1]
             file_path = f'{UPLOAD_FOLDER}/{name}.{ext}'
             with open(file_path, 'wb+') as f:
                 f.write(file.file.read())
-            f.close()
 
-            insert_loadedfiles_path(applno,file_path)
+            check_data_present = get_loadedfiles_data(conn,applno,file_path)
+            if check_data_present is not None :
+                already_present_files.append(f"This file {name} with docid {check_data_present} already present in the DB")
+                continue
+            inserted_id = insert_loadedfiles_path(conn,applno,file_path)
+            inserted_ids.append({"id": inserted_id, "file_path": file_path})
+
+        if already_present_files:
+            message = "\n".join(already_present_files)
+            return {
+                "message": message,
+                "inserted_ids": inserted_ids
+            }
+
         message = "Documents and its applno are inserted in the loadedfiles table successfully"
+    except HTTPException:
+        raise
     except Exception as e:
         message = f"Error In Uploading Documents and its applno: {str(e)}"
+        raise HTTPException(status_code=500, detail=message)
 
-    return Uploaddocument(message=message) 
+    return {
+        "message": message,
+        "inserted_ids": [InsertedFile(**item) for item in inserted_ids]
+    }
 
 @app.post("/extract/extract_details/")
 async def extract_details(docid: int):
