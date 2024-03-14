@@ -327,6 +327,7 @@ async def extract_details(docid: int):
         elif bank == "HDFC Bank":
             details = extract.extract_key_value_hdfc(info)
             details['bankaddress'] = details['bankaddress'].replace("\n", " ")
+            details['odlimit'] = details['odlimit'].replace("\n", " ")
             details['docid'] = docid
             details['bankname'] = bank
             account_num = details['accountno']
@@ -348,6 +349,7 @@ async def extract_details(docid: int):
 
         elif bank == "UNION BANK OF INDIA":
             details = extract.extract_key_value_union(info)
+            details['statementperiodto'] = details['statementperiodto'].replace("\n", "")
             details['docid'] = docid
             details['bankname'] = bank
             account_num = details['accountno']
@@ -369,6 +371,7 @@ async def extract_details(docid: int):
 
         elif bank == "AXIS BANK":
             details = extract.extract_key_value_axis(info)
+            details['address'] = details['address'].replace("\n", " ")
             details['docid'] = docid
             details['bankname'] = bank
             account_num = details['accountno']
