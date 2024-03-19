@@ -73,7 +73,7 @@ expenditure = Transaction()
 def index():
     return RedirectResponse('extract/docs')
 
-def insert_details(details):
+def insert_details(conn,details):
     try:
         cur = conn.cursor()
         for column_name, value in details.items():
@@ -114,7 +114,7 @@ def create_or_update_transaction_table(trans, engine):
             # Rollback the transaction if needed
             conn.rollback()
 
-def get_docname(docid):
+def get_docname(conn,docid):
     cursor = conn.cursor()
     query = "SELECT docname FROM loadedfiles WHERE id = %s"
     cursor.execute(query, (docid,))
@@ -122,7 +122,7 @@ def get_docname(docid):
     cursor.close()
     return docname[0] if docname else None
 
-def loadedfiles_id(applno):
+def loadedfiles_id(conn,applno):
     cursor = conn.cursor()
     query = "SELECT id FROM loadedfiles WHERE applno = %s"
     cursor.execute(query, (applno,))
@@ -130,7 +130,7 @@ def loadedfiles_id(applno):
     cursor.close()
     return ids
 
-def get_key_value_id(docid):
+def get_key_value_id(conn,docid):
     cursor = conn.cursor()
     query = "SELECT docid FROM extraction_key_value WHERE docid = %s"
     cursor.execute(query, (docid,))
@@ -138,7 +138,7 @@ def get_key_value_id(docid):
     cursor.close()
     return match_id[0] if match_id else None
 
-def get_key_value_data(account_num):
+def get_key_value_data(conn,account_num):
     cursor = conn.cursor()
     query = "SELECT docid,accountno,statementperiod,statementperiodfrom,statementperiodto FROM extraction_key_value WHERE accountno = %s"
     cursor.execute(query, (account_num,))
@@ -155,15 +155,21 @@ def get_key_value_data(account_num):
     else:
         return None
 
-def get_loadedfiles_data(conn,applno,file_path):
+def get_loadedfiles_data(conn,file_path):
     cursor = conn.cursor()
-    query = "SELECT id FROM loadedfiles l WHERE applno = %s and docname = %s"
-    cursor.execute(query, (applno,file_path))
+    query = "SELECT id,applno FROM loadedfiles l WHERE docname = %s"
+    cursor.execute(query, (file_path,))
     match_id = cursor.fetchone()
     cursor.close()
-    return match_id[0] if match_id else None
+    if match_id:
+        return {
+            "docid" :match_id[0],
+            "applno": match_id[1]
+        }
+    else:
+        return None
 
-def get_transaction_id(docid):
+def get_transaction_id(conn,docid):
     cursor = conn.cursor()
     query = "SELECT docid FROM extract_transaction_data WHERE docid = %s"
     cursor.execute(query, (docid,))
@@ -171,7 +177,7 @@ def get_transaction_id(docid):
     cursor.close()
     return match_id[0] if match_id else None
 
-def get_transaction_data(ids):
+def get_transaction_data(conn,ids):
     all_data = []
     cursor = conn.cursor()
     query = "SELECT * FROM extract_transaction_data WHERE docid IN %s"
@@ -183,7 +189,7 @@ def get_transaction_data(ids):
     cursor.close()
     return all_data
 
-def get_emi(applno):
+def get_emi(conn,applno):
     cursor = conn.cursor()
     query = "SELECT emi FROM loandetails WHERE applno = %s"
     cursor.execute(query, (applno,))
@@ -191,15 +197,22 @@ def get_emi(applno):
     cursor.close()
     return emi
 
-def update_loan_details(applno,gross_income,expenses,emi):
+def update_loan_details(conn,applno, gross_income, expenses, emi):
     if gross_income <= 0:
         raise ValueError("Income must be greater than 0")
     
-    cursor = conn.cursor()
-    query = "UPDATE loandetails SET income = %s, expenses = %s, rir = (%s/ %s) * 100.00 WHERE applno = %s AND %s > 0"
-    cursor.execute(query, (gross_income, expenses,emi, gross_income, applno, gross_income))
-    conn.commit()
-    cursor.close()
+    try:
+        cursor = conn.cursor()
+        query = "UPDATE loandetails SET income = %s, expenses = %s, rir = (%s / %s) * 100.00 WHERE applno = %s"
+        cursor.execute(query, (gross_income, expenses, emi, gross_income, applno))
+        conn.commit()
+    except (Exception, psycopg2.DatabaseError) as error:
+        conn.rollback()
+        print(f"Error updating loan details: {error}")
+    finally:
+        if cursor:
+            cursor.close()
+
 
 def insert_loadedfiles_path(conn,applno, filepath):
     try:
@@ -208,7 +221,7 @@ def insert_loadedfiles_path(conn,applno, filepath):
         cursor.execute(query, (applno, filepath))
         inserted_id = cursor.fetchone()[0]
         conn.commit()
-    except Exception as e:
+    except (Exception, psycopg2.DatabaseError) as e:
         print(f"Error inserting record: {e}")
         conn.rollback()
         raise
@@ -216,32 +229,38 @@ def insert_loadedfiles_path(conn,applno, filepath):
         cursor.close()
     return inserted_id
 
-def rating_calculation(applno):
-    cur = conn.cursor()
-    all_data = []
-    sql_query = """
-    select 'Expense', case b.weight when 0 then b.points else a.expenses * weight end from LoanDetails a, critlookup b where a.expenses >= b.rangelo and a.expenses < b.rangehi  and b.critcat = 'Expenses' and a.applno = applno
-    union
-    select 'Income', case b.weight when 0 then b.points else a.income * weight end from LoanDetails a, critlookup b where a.income >= b.rangelo and a.income < b.rangehi  and b.critcat = 'Gross Income'  and a.applno = applno
-    union
-    select 'Cheque Bounce', case b.weight when 0 then b.points else a.bounced * weight end from LoanDetails a, critlookup b where a.bounced >= b.rangelo and a.bounced < b.rangehi  and b.critcat = 'Cheque Bounce'  and a.applno = applno
-    union
-    select 'Delayed Payment', case b.weight when 0 then b.points else a.delayed * weight end from LoanDetails a, critlookup b where a.delayed >= b.rangelo and a.delayed < b.rangehi  and b.critcat = 'Delayed Payment'  and a.applno = applno
-    union
-    select 'RIR', case b.weight when 0 then b.points else a.rir * weight end from LoanDetails a, critlookup b where a.rir >= b.rangelo and a.rir < b.rangehi  and b.critcat = 'RIR'  and a.applno = applno
-    """
-    cur.execute(sql_query)
-    rows = cur.fetchall()
-    
-    for row in rows:
-        all_data.append(row)
+def rating_calculation(conn,applno):
+    try:
+        cur = conn.cursor()
+        all_data = []
+        sql_query = """
+        select 'Expense', case b.weight when 0 then b.points else a.expenses * weight end from LoanDetails a, critlookup b where a.expenses >= b.rangelo and a.expenses < b.rangehi  and b.critcat = 'Expenses' and a.applno = applno
+        union
+        select 'Income', case b.weight when 0 then b.points else a.income * weight end from LoanDetails a, critlookup b where a.income >= b.rangelo and a.income < b.rangehi  and b.critcat = 'Gross Income'  and a.applno = applno
+        union
+        select 'Cheque Bounce', case b.weight when 0 then b.points else a.bounced * weight end from LoanDetails a, critlookup b where a.bounced >= b.rangelo and a.bounced < b.rangehi  and b.critcat = 'Cheque Bounce'  and a.applno = applno
+        union
+        select 'Delayed Payment', case b.weight when 0 then b.points else a.delayed * weight end from LoanDetails a, critlookup b where a.delayed >= b.rangelo and a.delayed < b.rangehi  and b.critcat = 'Delayed Payment'  and a.applno = applno
+        union
+        select 'RIR', case b.weight when 0 then b.points else a.rir * weight end from LoanDetails a, critlookup b where a.rir >= b.rangelo and a.rir < b.rangehi  and b.critcat = 'RIR'  and a.applno = applno
+        """
+        cur.execute(sql_query)
+        rows = cur.fetchall()
+        
+        for row in rows:
+            all_data.append(row)
 
-    total_score = sum(row[1] for row in all_data)
+        total_score = sum(row[1] for row in all_data) / 4
 
-    update_query = "UPDATE loandetails SET rating = %s WHERE applno = applno;"
-    cur.execute(update_query, (total_score/4,))
-    conn.commit()
-    cur.close()
+        update_query = "UPDATE loandetails SET rating = %s WHERE applno = %s;"
+        cur.execute(update_query, (total_score,applno))
+        conn.commit()
+    except (Exception, psycopg2.DatabaseError) as error:
+        conn.rollback()
+        print(f"Error updating loan details: {error}")
+    finally:
+        if 'cur' in locals() and cur is not None:
+            cur.close()
 
 @app.post("/extract/uploaddocument/")
 async def uploaddocument(applno: str,files: List[UploadFile] = File(...)):
@@ -255,9 +274,9 @@ async def uploaddocument(applno: str,files: List[UploadFile] = File(...)):
             with open(file_path, 'wb+') as f:
                 f.write(file.file.read())
 
-            check_data_present = get_loadedfiles_data(conn,applno,file_path)
+            check_data_present = get_loadedfiles_data(conn,file_path)
             if check_data_present is not None :
-                already_present_files.append(f"This file {name} with docid {check_data_present} already present in the DB")
+                already_present_files.append(f"This file {name} with docid {check_data_present.get('docid')} for applno '{check_data_present.get('applno')}' already present in the DB")
                 continue
             inserted_id = insert_loadedfiles_path(conn,applno,file_path)
             inserted_ids.append({"id": inserted_id, "file_path": file_path})
@@ -284,11 +303,11 @@ async def uploaddocument(applno: str,files: List[UploadFile] = File(...)):
 @app.post("/extract/extract_details/")
 async def extract_details(docid: int):
     message = "Default message"
-    get_id = get_key_value_id(docid)
+    get_id = get_key_value_id(conn,docid)
     if get_id == docid:
         raise HTTPException(status_code=200, detail="Details Already extracted and inserted into the DB")
 
-    pdf_path = get_docname(docid)
+    pdf_path = get_docname(conn,docid)
     if not os.path.exists(pdf_path):
         raise HTTPException(status_code=404, detail="PDF file not found")
     try:
@@ -319,10 +338,10 @@ async def extract_details(docid: int):
                 details['docid'] = docid
                 details['bankname'] = bank
                 account_num = details['accountno']
-            check_data_present = get_key_value_data(account_num)
+            check_data_present = get_key_value_data(conn,account_num)
             if check_data_present is not None and details.get('statementperiod') == check_data_present.get('statementperiod'):
                 raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
-            insert_details(details)
+            insert_details(conn,details)
 
         elif bank == "HDFC Bank":
             details = extract.extract_key_value_hdfc(info)
@@ -331,10 +350,10 @@ async def extract_details(docid: int):
             details['docid'] = docid
             details['bankname'] = bank
             account_num = details['accountno']
-            check_data_present = get_key_value_data(account_num)
+            check_data_present = get_key_value_data(conn,account_num)
             if check_data_present is not None and details.get('statementperiodfrom') == check_data_present.get('statementperiodfrom') and details.get('statementperiodto') == check_data_present.get('statementperiodto'):
                 raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
-            insert_details(details)
+            insert_details(conn,details)
 
         elif bank == "INDIAN BANK":
             details = extract.extract_key_value_indian(info)
@@ -342,10 +361,10 @@ async def extract_details(docid: int):
             details['docid'] = docid
             details['bankname'] = bank
             account_num = details['accountno']
-            check_data_present = get_key_value_data(account_num)
+            check_data_present = get_key_value_data(conn,account_num)
             if check_data_present is not None and details.get('statementperiod') == check_data_present.get('statementperiod'):
                 raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
-            insert_details(details)
+            insert_details(conn,details)
 
         elif bank == "UNION BANK OF INDIA":
             details = extract.extract_key_value_union(info)
@@ -353,10 +372,10 @@ async def extract_details(docid: int):
             details['docid'] = docid
             details['bankname'] = bank
             account_num = details['accountno']
-            check_data_present = get_key_value_data(account_num)
+            check_data_present = get_key_value_data(conn,account_num)
             if check_data_present is not None and details.get('statementperiodfrom') == check_data_present.get('statementperiodfrom') and details.get('statementperiodto') == check_data_present.get('statementperiodto'):
                 raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
-            insert_details(details)
+            insert_details(conn,details)
 
         elif bank == "BANK OF BARODA":
             text_with_coords_bob = first_page.extract_table({"vertical_strategy": "text","horizontal_strategy": "text","min_words_vertical": 2})
@@ -364,10 +383,10 @@ async def extract_details(docid: int):
             details['docid'] = docid
             details['bankname'] = bank
             account_num = details['accountno']
-            check_data_present = get_key_value_data(account_num)
+            check_data_present = get_key_value_data(conn,account_num)
             if check_data_present is not None and details.get('statementperiod') == check_data_present.get('statementperiod'):
                 raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
-            insert_details(details)
+            insert_details(conn,details)
 
         elif bank == "AXIS BANK":
             details = extract.extract_key_value_axis(info)
@@ -375,20 +394,20 @@ async def extract_details(docid: int):
             details['docid'] = docid
             details['bankname'] = bank
             account_num = details['accountno']
-            check_data_present = get_key_value_data(account_num)
+            check_data_present = get_key_value_data(conn,account_num)
             if check_data_present is not None and details.get('statementperiodfrom') == check_data_present.get('statementperiodfrom') and details.get('statementperiodto') == check_data_present.get('statementperiodto'):
                 raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
-            insert_details(details)
+            insert_details(conn,details)
 
         elif bank == "YES BANK":
             details = extract.extract_key_value_yes(info)
             details['docid'] = docid
             details['bankname'] = bank
             account_num = details['accountno']
-            check_data_present = get_key_value_data(account_num)
+            check_data_present = get_key_value_data(conn,account_num)
             if check_data_present is not None and details.get('statementperiod') == check_data_present.get('statementperiod'):
                 raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
-            insert_details(details)
+            insert_details(conn,details)
         else:
             raise ValueError("Bank not supported")
 
@@ -406,15 +425,15 @@ async def extract_details(docid: int):
 
 @app.post("/extract/extract_transactions/")
 async def extract_transactions(docid: int):
-    transaction_id = get_transaction_id(docid)
+    transaction_id = get_transaction_id(conn,docid)
     if transaction_id == docid:
         raise HTTPException(status_code=200, detail="Table Data Already parsed and inserted into the DB")
 
-    duplicate_insertion = get_key_value_id(docid)
+    duplicate_insertion = get_key_value_id(conn,docid)
     if duplicate_insertion is None:
         raise HTTPException(status_code=409, detail="Transaction data cannot be  parsed as Key_values are not parsed for this docid.")
 
-    pdf_path = get_docname(docid)
+    pdf_path = get_docname(conn,docid)
     if not os.path.exists(pdf_path):
         raise HTTPException(status_code=404, detail="PDF file not found")
 
@@ -541,16 +560,16 @@ async def extract_transactions(docid: int):
 @app.post("/extract/rating/")
 async def rating(applno: str):
     try:
-        ids = loadedfiles_id(applno)
-        trans = get_transaction_data(ids)
+        ids = loadedfiles_id(conn,applno)
+        trans = get_transaction_data(conn,ids)
         months = expenditure.distinct_months(trans)
         expd = expenditure.classify_trans(trans)
         data = expenditure.money(expd)
         gross_income = expenditure.repeated_credits(data,months)
         expenses = expenditure.repeated_debits(data,months)
-        emi = get_emi(applno)
-        update_loan_details(applno,gross_income,expenses,emi)
-        rating_calculation(applno)
+        emi = get_emi(conn,applno)
+        update_loan_details(conn,applno,gross_income,expenses,emi)
+        rating_calculation(conn,applno)
         message = "Rating calculated and updated in loanDetails table successfully"
     except Exception as e:
         message = f"Error In Calculating Rating engine: {str(e)}"
