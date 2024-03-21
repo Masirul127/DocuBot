@@ -207,10 +207,9 @@ def update_loan_details(conn,applno, gross_income, expenses, emi):
         cursor.execute(query, (gross_income, expenses, emi, gross_income, applno))
         conn.commit()
     except (Exception, psycopg2.DatabaseError) as error:
-        conn.rollback()
         print(f"Error updating loan details: {error}")
+        conn.rollback()
     finally:
-        if cursor:
             cursor.close()
 
 
@@ -256,10 +255,9 @@ def rating_calculation(conn,applno):
         cur.execute(update_query, (total_score,applno))
         conn.commit()
     except (Exception, psycopg2.DatabaseError) as error:
-        conn.rollback()
         print(f"Error updating loan details: {error}")
+        conn.rollback()
     finally:
-        if 'cur' in locals() and cur is not None:
             cur.close()
 
 @app.post("/extract/uploaddocument/")
@@ -270,27 +268,33 @@ async def uploaddocument(applno: str,files: List[UploadFile] = File(...)):
         for file in files:
             name = file.filename.split('.')[0]
             ext = file.filename.split('.')[-1]
+            if ext != 'pdf':
+                already_present_files.append({"file_name": name, "error": "Document format is not supported"})
+                continue
+
             file_path = f'{UPLOAD_FOLDER}/{name}.{ext}'
             with open(file_path, 'wb+') as f:
                 f.write(file.file.read())
 
             check_data_present = get_loadedfiles_data(conn,file_path)
             if check_data_present is not None :
-                already_present_files.append(f"This file {name} with docid {check_data_present.get('docid')} for applno '{check_data_present.get('applno')}' already present in the DB")
+                already_present_files.append({"file_name": name, "error": f"This file with docid {check_data_present.get('docid')} for applno '{check_data_present.get('applno')}' already present in the DB"})
                 continue
             inserted_id = insert_loadedfiles_path(conn,applno,file_path)
             inserted_ids.append({"id": inserted_id, "file_path": file_path})
 
         if already_present_files:
-            message = "\n".join(already_present_files)
+            message = "Some files encountered errors:"
+            for error_file in already_present_files:
+                message += f" Filename '{error_file['file_name']}': '{error_file['error']}'"
             return {
                 "message": message,
                 "inserted_ids": inserted_ids
             }
 
         message = "Documents and its applno are inserted in the loadedfiles table successfully"
-    except HTTPException:
-        raise
+    except FileNotFoundError:
+        raise HTTPException(status_code=400, detail="Document format is not supported")
     except Exception as e:
         message = f"Error In Uploading Documents and its applno: {str(e)}"
         raise HTTPException(status_code=500, detail=message)
@@ -308,7 +312,7 @@ async def extract_details(docid: int):
         raise HTTPException(status_code=200, detail="Details Already extracted and inserted into the DB")
 
     pdf_path = get_docname(conn,docid)
-    if not os.path.exists(pdf_path):
+    if pdf_path is None or not os.path.exists(pdf_path):
         raise HTTPException(status_code=404, detail="PDF file not found")
     try:
         details = {}
