@@ -65,6 +65,10 @@ isdir = os.path.isdir(UPLOAD_FOLDER)
 if not isdir:
     os.makedirs(UPLOAD_FOLDER)
 
+current_permissions = os.stat(UPLOAD_FOLDER).st_mode & 0o777
+if current_permissions != 0o777:
+    os.chmod(UPLOAD_FOLDER, 0o777)
+
 extract = Extraction()
 transaction = ExtractTable()
 expenditure = Transaction()
@@ -438,7 +442,7 @@ async def extract_transactions(docid: int):
         raise HTTPException(status_code=409, detail="Transaction data cannot be  parsed as Key_values are not parsed for this docid.")
 
     pdf_path = get_docname(conn,docid)
-    if not os.path.exists(pdf_path):
+    if pdf_path is None or not os.path.exists(pdf_path):
         raise HTTPException(status_code=404, detail="PDF file not found")
 
     try:
