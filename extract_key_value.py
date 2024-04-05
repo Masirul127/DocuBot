@@ -9,8 +9,11 @@ class Extraction:
             ifsc = text.find(val)
             if ifsc != -1:
                 new_text = text[ifsc : ifsc + 37]
-                code = re.findall(r'[A-Z0-9]{11}', new_text)
-        return code
+                ifsc_code = re.findall(r'[A-Z0-9]{11}', new_text)
+                if ifsc_code :
+                    return ifsc_code
+                else:
+                    return None
 
     def classify_bank(self,text):
         '''
@@ -18,13 +21,16 @@ class Extraction:
         '''
         banks = {"YES": "YES BANK", "ALLA": "ALLAHABAD BANK","SBI":"STATE BANK OF INDIA","BARB":"BANK OF BARODA","UTIB":"AXIS BANK","UBIN":"UNION BANK OF INDIA","HDFC":"HDFC Bank"}
         ifsc = self.get_ifsc(text)
-        matches = [word for word in ifsc if re.match(r'[A-Za-z][A-Za-z0-9_]*', word)][0]
-        # code =re.findall(r'[A-Za-z][A-Za-z0-9_]*', ifsc)
-        bank = ""
-        for j in banks.keys():
-            if j in matches:
-                bank = banks[j]
-                break  
+        if ifsc:
+            matches = [word for word in ifsc if re.match(r'[A-Za-z][A-Za-z0-9_]*', word)][0]
+            # code =re.findall(r'[A-Za-z][A-Za-z0-9_]*', ifsc)
+            bank = ""
+            for j in banks.keys():
+                if j in matches:
+                    bank = banks[j]
+                    break
+        else:
+            return("Ifsc code not found")
         return bank
 
     def extract_key_value_sbi(self,text):

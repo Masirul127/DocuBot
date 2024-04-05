@@ -118,88 +118,142 @@ def create_or_update_transaction_table(trans, engine):
             # Rollback the transaction if needed
             conn.rollback()
 
-def get_docname(conn,docid):
-    cursor = conn.cursor()
-    query = "SELECT docname FROM loadedfiles WHERE id = %s"
-    cursor.execute(query, (docid,))
-    docname = cursor.fetchone()  # Fetch the first column of the first row
-    cursor.close()
-    return docname[0] if docname else None
-
-def loadedfiles_id(conn,applno):
-    cursor = conn.cursor()
-    query = "SELECT id FROM loadedfiles WHERE applno = %s"
-    cursor.execute(query, (applno,))
-    ids = cursor.fetchall()
-    cursor.close()
-    return ids
-
-def get_key_value_id(conn,docid):
-    cursor = conn.cursor()
-    query = "SELECT docid FROM extraction_key_value WHERE docid = %s"
-    cursor.execute(query, (docid,))
-    match_id = cursor.fetchone()
-    cursor.close()
-    return match_id[0] if match_id else None
-
-def get_key_value_data(conn,account_num):
-    cursor = conn.cursor()
-    query = "SELECT docid,accountno,statementperiod,statementperiodfrom,statementperiodto FROM extraction_key_value WHERE accountno = %s"
-    cursor.execute(query, (account_num,))
-    match_id = cursor.fetchone()
-    cursor.close()
-    if match_id:
-        return {
-            "docid" :match_id[0],
-            "accountno": match_id[1],
-            "statementperiod": match_id[2],
-            "statementperiodfrom": match_id[3],
-            "statementperiodto": match_id[4]
-        }
-    else:
+def get_docname(conn, docid):
+    try:
+        cursor = conn.cursor()
+        query = "SELECT docname FROM loadedfiles WHERE id = %s"
+        cursor.execute(query, (docid,))
+        docname_row = cursor.fetchone()
+        if docname_row is not None:
+            return docname_row[0]  # Fetch the docname value from the first column
+        else:
+            return None 
+    except Exception as e:
+        print(f"Error fetching data: {e}")
         return None
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
 
-def get_loadedfiles_data(conn,file_path):
-    cursor = conn.cursor()
-    query = "SELECT id,applno FROM loadedfiles l WHERE docname = %s"
-    cursor.execute(query, (file_path,))
-    match_id = cursor.fetchone()
-    cursor.close()
-    if match_id:
-        return {
-            "docid" :match_id[0],
-            "applno": match_id[1]
-        }
-    else:
+def loadedfiles_id(conn, applno):
+    try:
+        cursor = conn.cursor()
+        query = "SELECT id FROM loadedfiles WHERE applno = %s"
+        cursor.execute(query, (applno,))
+        ids = cursor.fetchall()
+        return ids
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return []
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+
+def get_key_value_id(conn, docid):
+    try:
+        cursor = conn.cursor()
+        query = "SELECT docid FROM extraction_key_value WHERE docid = %s"
+        cursor.execute(query, (docid,))
+        match_id = cursor.fetchone()
+        return match_id[0] if match_id else None
+    except Exception as e:
+        print(f"Error fetching data: {e}")
         return None
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
 
-def get_transaction_id(conn,docid):
-    cursor = conn.cursor()
-    query = "SELECT docid FROM extract_transaction_data WHERE docid = %s"
-    cursor.execute(query, (docid,))
-    match_id = cursor.fetchone()
-    cursor.close()
-    return match_id[0] if match_id else None
+def get_key_value_data(conn, account_num):
+    try:
+        cursor = conn.cursor()
+        query = "SELECT docid, accountno, statementperiod, statementperiodfrom, statementperiodto FROM extraction_key_value WHERE accountno = %s"
+        cursor.execute(query, (account_num,))
+        match_id = cursor.fetchone()
+        if match_id:
+            return {
+                "docid": match_id[0],
+                "accountno": match_id[1],
+                "statementperiod": match_id[2],
+                "statementperiodfrom": match_id[3],
+                "statementperiodto": match_id[4]
+            }
+        else:
+            return None
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return None
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
 
-def get_transaction_data(conn,ids):
+def get_loadedfiles_data(conn, file_path):
+    try:
+        cursor = conn.cursor()
+        query = "SELECT id, applno FROM loadedfiles WHERE docname = %s"
+        cursor.execute(query, (file_path,))
+        match_id = cursor.fetchone()
+        if match_id:
+            return {
+                "docid": match_id[0],
+                "applno": match_id[1]
+            }
+        else:
+            return None
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return None
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+
+def get_transaction_id(conn, docid):
+    try:
+        cursor = conn.cursor()
+        query = "SELECT docid FROM extract_transaction_data WHERE docid = %s"
+        cursor.execute(query, (docid,))
+        match_id = cursor.fetchone()
+        return match_id[0] if match_id else None
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return None
+    finally:
+        if cursor is not None:
+            cursor.close()
+
+def get_transaction_data(conn, ids):
     all_data = []
-    cursor = conn.cursor()
-    query = "SELECT * FROM extract_transaction_data WHERE docid IN %s"
-    cursor.execute(query, (tuple(ids),))
-    rows = cursor.fetchall()
-    for row in rows:
-        all_data.append(row)
-
-    cursor.close()
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        query = "SELECT * FROM extract_transaction_data WHERE docid IN %s"
+        cursor.execute(query, (tuple(ids),))
+        rows = cursor.fetchall()
+        for row in rows:
+            all_data.append(row)
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+    finally:
+        if cursor is not None:
+            cursor.close()
     return all_data
 
-def get_emi(conn,applno):
-    cursor = conn.cursor()
-    query = "SELECT emi FROM loandetails WHERE applno = %s"
-    cursor.execute(query, (applno,))
-    emi = cursor.fetchone()[0]  # Fetch the first column of the first row
-    cursor.close()
-    return emi
+def get_emi(conn, applno):
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        query = "SELECT emi FROM loandetails WHERE applno = %s"
+        cursor.execute(query, (applno,))
+        emi_row = cursor.fetchone()
+        if emi_row is not None:
+            return emi_row[0]  # Fetch the emi value from the first column
+        else:
+            return None
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return None
+    finally:
+        if cursor is not None:
+            cursor.close()
 
 def update_loan_details(conn,applno, gross_income, expenses, emi):
     if gross_income <= 0:
@@ -418,7 +472,7 @@ async def extract_details(docid: int):
             insert_details(conn,details)
         else:
             raise ValueError("Bank not supported")
-
+    
         message = "Details extracted successfully"
     
     except HTTPException as e:
