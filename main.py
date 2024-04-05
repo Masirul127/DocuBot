@@ -326,7 +326,7 @@ async def uploaddocument(applno: str,files: List[UploadFile] = File(...)):
         for file in files:
             name = file.filename.split('.')[0]
             ext = file.filename.split('.')[-1]
-            if ext != 'pdf':
+            if ext.lower() != 'pdf':
                 already_present_files.append({"file_name": name, "error": "Document format is not supported"})
                 continue
 
