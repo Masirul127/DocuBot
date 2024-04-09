@@ -39,14 +39,14 @@ class Transaction:
 
         #### TODO: Rewriting the dictionary in a better implementation
 
-        labels = {"mpokk":"loan","krazyb":"loan","kreditb":"loan","loani": "loan","rent":"rent","imps": "imps", 
-                "rrn": "imps", "loan": "loan","emi": "emi", "amazon": "shopping", "flipkart": "shopping",
+        labels = {"mpokk":"loan","krazyb":"loan","kreditb":"loan","Kissht":"loan","Navi":"loan","loan": "loan","loani": "loan","rent":"rent",
+                "emi": "emi", "amazon": "shopping", "flipkart": "shopping",
                 "mutualfund": "invest", "txn paytm": "trf", "restaurant": "food", "paytm": "trf",
                 "atd": "atm", "atm": "atm", "net txn": "nettxn", "cash": "cash", "funds trf": "trf", "neft": "neft",
                 "interest": "interest",
                 "metro": "travel", "swiggy": "food", "faasos": "food", "zomato": "food", "upi": "trf", "ola": "travel",
                 "refund": "refund",
-                "charge": "bank_charges", "pca": "trf","salary":"salary"
+                "charge": "bank_charges", "pca": "trf","salary":"salary","imps": "imps","rrn": "imps"
                 }
 
         labs = []
@@ -97,36 +97,25 @@ class Transaction:
         return num_months
 
     def repeated_debits(self, df, months):
-        # Convert 'Txn_Date' to datetime if it's not already
-        df['Txn_Date'] = pd.to_datetime(df['Txn_Date'])
-        
-        # Group by month and debit amount
+        def filter_by_repetitions(df, min_repetitions):
+            repeated_counts = df['Debit'].value_counts()
+            return df[df['Debit'].isin(repeated_counts[repeated_counts >= min_repetitions - 1].index)]
+
+        # Group by month and credit amount
         df['Month'] = df['Txn_Date'].dt.to_period('M')
         grouped_df = df.groupby(['Month', 'Debit']).agg({'Txn_Date': list, 'Label': list}).reset_index()
-        
-        if months == 1:
-            # Filter debits that are repeated at least `months` times
-            repeated_debits = df['Debit'].value_counts()[df['Debit'].value_counts() >= 1].index
-            repeated_df = df[df['Debit'].isin(repeated_debits)]
 
-            # Filter debits that are repeated less than `months` times
-            repeated_debits1 = df['Debit'].value_counts()[df['Debit'].value_counts() <= months].index
-            repeated_df1 = df[df['Debit'].isin(repeated_debits1)]
-        else:
-            # Filter debits that are repeated at least `months` times
-            repeated_debits = df['Debit'].value_counts()[df['Debit'].value_counts() > 1].index
-            repeated_df = df[df['Debit'].isin(repeated_debits)]
-
-            # Filter debits that are repeated less than `months` times
-            repeated_debits1 = df['Debit'].value_counts()[df['Debit'].value_counts() < months].index
-            repeated_df1 = df[df['Debit'].isin(repeated_debits1)]
+        # Filter credits based on repetitions
+        repeated_df = filter_by_repetitions(df.copy(), months if months > 1 else 1)
+        non_repeated_df = df[~df.index.isin(repeated_df.index)]  # Filter non-repeated entries efficiently
         
         # Filter debits above 2000 and its label != 'loan' for each month
         high_debits_not_loan = repeated_df[(repeated_df['Debit'] > 2000) & (repeated_df['Label'] != 'loan')]
         grouped_high_debits_not_loan = high_debits_not_loan.groupby(['Month', 'Debit']).agg({'Txn_Date': list, 'Label': list}).reset_index()
 
         # Filter debits < 2000 and label != 'loan' for each month
-        low_debits_not_loan = repeated_df1[(repeated_df1['Debit'] < 2000) & (repeated_df1['Label'] != 'loan')]
+        # low_debits_not_loan = repeated_df1[(repeated_df1['Debit'] < 2000) & (repeated_df1['Label'] != 'loan')]
+        low_debits_not_loan = non_repeated_df[non_repeated_df['Label'] != 'loan']
         grouped_low_debits_not_loan = low_debits_not_loan.groupby(['Month', 'Debit']).agg({'Txn_Date': list, 'Label': list}).reset_index()
         
         # Filter debits with label 'loan' for each month
@@ -143,51 +132,46 @@ class Transaction:
         non_discretionary_expenses = non_discretionary_exp_sum *(-1)
 
         total_expense_monthly = discretionary_expense + non_discretionary_expenses
-        expenses = total_expense_monthly/months
+        expenses = round(total_expense_monthly / months, 2)
         return expenses
 
     def repeated_credits(self, df, months):
-        # Convert 'Txn_Date' to datetime if it's not already
+        # Ensure Txn_Date is datetime (uncomment if necessary)
         # df['Txn_Date'] = pd.to_datetime(df['Txn_Date'])
-        
+
+        def filter_by_repetitions(df, min_repetitions):
+            repeated_counts = df['Credit'].value_counts()
+            return df[df['Credit'].isin(repeated_counts[repeated_counts >= min_repetitions - 1].index)]
+
         # Group by month and credit amount
         df['Month'] = df['Txn_Date'].dt.to_period('M')
         grouped_df = df.groupby(['Month', 'Credit']).agg({'Txn_Date': list, 'Label': list}).reset_index()
-        
-        if months == 1:
-            # Filter credits that are repeated at least `months` times
-            repeated_credits = df['Credit'].value_counts()[df['Credit'].value_counts() >= 1].index
-            repeated_df = df[df['Credit'].isin(repeated_credits)]
 
-            # Filter credits that are repeated less than `months` times
-            repeated_credits1 = df['Credit'].value_counts()[df['Credit'].value_counts() <= months].index
-            repeated_df1 = df[df['Credit'].isin(repeated_credits1)]
-        else:
-            # Filter credits that are repeated at least `months` times
-            repeated_credits = df['Credit'].value_counts()[df['Credit'].value_counts() > 1].index
-            repeated_df = df[df['Credit'].isin(repeated_credits)]
+        # Filter credits based on repetitions
+        repeated_df = filter_by_repetitions(df.copy(), months if months > 1 else 1)
+        non_repeated_df = df[~df.index.isin(repeated_df.index)]  # Filter non-repeated entries efficiently
 
-            # Filter credits that are repeated less than `months` times
-            repeated_credits1 = df['Credit'].value_counts()[df['Credit'].value_counts() < months].index
-            repeated_df1 = df[df['Credit'].isin(repeated_credits1)]
-        
-        # Filter credits above 2000 and its label != 'loan' for each month
-        high_credits = repeated_df[(repeated_df['Credit'] > 2000) & (repeated_df['Label'] != 'loan') & (repeated_df['Label'] != 'salary')]
+        # Filter credits by category
+        high_credits = repeated_df[(repeated_df['Credit'] > 2000) & ~repeated_df['Label'].isin(['loan', 'salary'])]
         grouped_high_credits = high_credits.groupby(['Month', 'Credit']).agg({'Txn_Date': list, 'Label': list}).reset_index()
 
-        # Filter credits < 2000 and label != 'loan' for each month
-        interest_credit = repeated_df1[(repeated_df1['Credit'] < 2000) & (repeated_df1['Label'] == 'interest')]
+        interest_credit = repeated_df[repeated_df['Label'] == 'interest']
         grouped_interest_credit = interest_credit.groupby(['Month', 'Credit']).agg({'Txn_Date': list, 'Label': list}).reset_index()
-        
-        # Filter debits with label 'salary' for each month
+
+        interest_credit1 = non_repeated_df[non_repeated_df['Label'] == 'interest']  # Interest credits from non-repeated
+        grouped_interest_credit1 = interest_credit1.groupby(['Month', 'Credit']).agg({'Txn_Date': list, 'Label': list}).reset_index()
+
         salary_credits = repeated_df[repeated_df['Label'] == 'salary']
         grouped_salary_credits = salary_credits.groupby(['Month', 'Credit']).agg({'Txn_Date': list, 'Label': list}).reset_index()
 
-        # Concatenate the three DataFrames
-        merged_df = pd.concat([grouped_high_credits, grouped_salary_credits, grouped_interest_credit])
+        salary_credit1 = non_repeated_df[non_repeated_df['Label'] == 'salary']  # Salary credits from non-repeated
+        grouped_salary_credit1 = salary_credit1.groupby(['Month', 'Credit']).agg({'Txn_Date': list, 'Label': list}).reset_index()
+
+        # Concatenate the DataFrames
+        merged_df = pd.concat([grouped_high_credits, grouped_salary_credits, grouped_salary_credit1, grouped_interest_credit, grouped_interest_credit1])
 
         # Calculate sum
         total_income_monthly = merged_df.groupby('Month')['Credit'].sum().reset_index()
-        total_income= merged_df['Credit'].sum()
-        gross_income = total_income/months
+        total_income = merged_df['Credit'].sum()
+        gross_income = round(total_income / months, 2)
         return gross_income
