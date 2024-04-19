@@ -119,6 +119,7 @@ def create_or_update_transaction_table(trans, engine):
             conn.rollback()
 
 def get_docname(conn, docid):
+    cursor = None
     try:
         cursor = conn.cursor()
         query = "SELECT docname FROM loadedfiles WHERE id = %s"
@@ -130,12 +131,14 @@ def get_docname(conn, docid):
             return None 
     except Exception as e:
         print(f"Error fetching data: {e}")
+        conn.rollback()
         return None
     finally:
-        if 'cursor' in locals() and cursor:
+        if cursor is not None:
             cursor.close()
 
 def loadedfiles_id(conn, applno):
+    cursor = None
     try:
         cursor = conn.cursor()
         query = "SELECT id FROM loadedfiles WHERE applno = %s"
@@ -144,12 +147,14 @@ def loadedfiles_id(conn, applno):
         return ids
     except Exception as e:
         print(f"Error fetching data: {e}")
+        conn.rollback()
         return []
     finally:
-        if 'cursor' in locals() and cursor:
+        if cursor is not None:
             cursor.close()
 
 def get_key_value_id(conn, docid):
+    cursor = None
     try:
         cursor = conn.cursor()
         query = "SELECT docid FROM extraction_key_value WHERE docid = %s"
@@ -158,12 +163,14 @@ def get_key_value_id(conn, docid):
         return match_id[0] if match_id else None
     except Exception as e:
         print(f"Error fetching data: {e}")
+        conn.rollback()
         return None
     finally:
-        if 'cursor' in locals() and cursor:
+        if cursor is not None:
             cursor.close()
 
 def get_key_value_data(conn, account_num):
+    cursor = None
     try:
         cursor = conn.cursor()
         query = "SELECT docid, accountno, statementperiod, statementperiodfrom, statementperiodto FROM extraction_key_value WHERE accountno = %s"
@@ -181,12 +188,14 @@ def get_key_value_data(conn, account_num):
             return None
     except Exception as e:
         print(f"Error fetching data: {e}")
+        conn.rollback()
         return None
     finally:
-        if 'cursor' in locals() and cursor:
+        if cursor is not None:
             cursor.close()
 
 def get_loadedfiles_data(conn, file_path):
+    cursor = None
     try:
         cursor = conn.cursor()
         query = "SELECT id, applno FROM loadedfiles WHERE docname = %s"
@@ -201,12 +210,14 @@ def get_loadedfiles_data(conn, file_path):
             return None
     except Exception as e:
         print(f"Error fetching data: {e}")
+        conn.rollback()
         return None
     finally:
-        if 'cursor' in locals() and cursor:
+        if cursor is not None:
             cursor.close()
 
 def get_transaction_id(conn, docid):
+    cursor = None
     try:
         cursor = conn.cursor()
         query = "SELECT docid FROM extract_transaction_data WHERE docid = %s"
@@ -215,6 +226,7 @@ def get_transaction_id(conn, docid):
         return match_id[0] if match_id else None
     except Exception as e:
         print(f"Error fetching data: {e}")
+        conn.rollback()
         return None
     finally:
         if cursor is not None:
@@ -225,6 +237,8 @@ def get_transaction_data(conn, ids):
     cursor = None
     try:
         cursor = conn.cursor()
+        if not ids:
+            return all_data
         query = "SELECT * FROM extract_transaction_data WHERE docid IN %s"
         cursor.execute(query, (tuple(ids),))
         rows = cursor.fetchall()
@@ -232,6 +246,7 @@ def get_transaction_data(conn, ids):
             all_data.append(row)
     except Exception as e:
         print(f"Error fetching data: {e}")
+        conn.rollback()
     finally:
         if cursor is not None:
             cursor.close()
@@ -250,6 +265,7 @@ def get_emi(conn, applno):
             return None
     except Exception as e:
         print(f"Error fetching data: {e}")
+        conn.rollback()
         return None
     finally:
         if cursor is not None:
@@ -268,10 +284,11 @@ def update_loan_details(conn,applno, gross_income, expenses, emi):
         print(f"Error updating loan details: {error}")
         conn.rollback()
     finally:
-            cursor.close()
+        cursor.close()
 
 
 def insert_loadedfiles_path(conn,applno, filepath):
+    cursor = None
     try:
         cursor = conn.cursor()
         query = "INSERT INTO loadedfiles (applno, docname) VALUES (%s, %s) RETURNING id"
@@ -283,40 +300,42 @@ def insert_loadedfiles_path(conn,applno, filepath):
         conn.rollback()
         raise
     finally:
-        cursor.close()
+        if cursor is not None:
+            cursor.close()
     return inserted_id
 
-def rating_calculation(conn,applno):
+def rating_calculation(conn, applno):
+    cur = None
     try:
         cur = conn.cursor()
-        all_data = []
         sql_query = """
-        select 'Expense', case b.weight when 0 then b.points else a.expenses * weight end from LoanDetails a, critlookup b where a.expenses >= b.rangelo and a.expenses < b.rangehi  and b.critcat = 'Expenses' and a.applno = applno
-        union
-        select 'Income', case b.weight when 0 then b.points else a.income * weight end from LoanDetails a, critlookup b where a.income >= b.rangelo and a.income < b.rangehi  and b.critcat = 'Gross Income'  and a.applno = applno
-        union
-        select 'Cheque Bounce', case b.weight when 0 then b.points else a.bounced * weight end from LoanDetails a, critlookup b where a.bounced >= b.rangelo and a.bounced < b.rangehi  and b.critcat = 'Cheque Bounce'  and a.applno = applno
-        union
-        select 'Delayed Payment', case b.weight when 0 then b.points else a.delayed * weight end from LoanDetails a, critlookup b where a.delayed >= b.rangelo and a.delayed < b.rangehi  and b.critcat = 'Delayed Payment'  and a.applno = applno
-        union
-        select 'RIR', case b.weight when 0 then b.points else a.rir * weight end from LoanDetails a, critlookup b where a.rir >= b.rangelo and a.rir < b.rangehi  and b.critcat = 'RIR'  and a.applno = applno
+        SELECT
+            SUM(CASE WHEN b.critcat = 'Expenses' THEN CASE WHEN b.weight = 0 THEN b.points ELSE a.expenses * b.weight END ELSE 0 END) +
+            SUM(CASE WHEN b.critcat = 'Gross Income' THEN CASE WHEN b.weight = 0 THEN b.points ELSE a.income * b.weight END ELSE 0 END) +
+            SUM(CASE WHEN b.critcat = 'Cheque Bounce' THEN CASE WHEN b.weight = 0 THEN b.points ELSE a.bounced * b.weight END ELSE 0 END) +
+            SUM(CASE WHEN b.critcat = 'Delayed Payment' THEN CASE WHEN b.weight = 0 THEN b.points ELSE a.delayed * b.weight END ELSE 0 END) +
+            SUM(CASE WHEN b.critcat = 'RIR' THEN CASE WHEN b.weight = 0 THEN b.points ELSE a.rir * b.weight END ELSE 0 END)
+        FROM LoanDetails a
+        JOIN critlookup b ON (a.expenses BETWEEN b.rangelo AND b.rangehi AND b.critcat = 'Expenses')
+                          OR (a.income BETWEEN b.rangelo AND b.rangehi AND b.critcat = 'Gross Income')
+                          OR (a.bounced BETWEEN b.rangelo AND b.rangehi AND b.critcat = 'Cheque Bounce')
+                          OR (a.delayed BETWEEN b.rangelo AND b.rangehi AND b.critcat = 'Delayed Payment')
+                          OR (a.rir BETWEEN b.rangelo AND b.rangehi AND b.critcat = 'RIR')
+        WHERE a.applno = %s
         """
-        cur.execute(sql_query)
-        rows = cur.fetchall()
-        
-        for row in rows:
-            all_data.append(row)
-
-        total_score = sum(row[1] for row in all_data) / 4
+        cur.execute(sql_query, (applno,))
+        total_score = cur.fetchone()[0] / 4
 
         update_query = "UPDATE loandetails SET rating = %s WHERE applno = %s;"
-        cur.execute(update_query, (total_score,applno))
+        cur.execute(update_query, (total_score, applno))
         conn.commit()
     except (Exception, psycopg2.DatabaseError) as error:
         print(f"Error updating loan details: {error}")
         conn.rollback()
     finally:
+        if cur is not None:
             cur.close()
+
 
 @app.post("/extract/uploaddocument/")
 async def uploaddocument(applno: str,files: List[UploadFile] = File(...)):
@@ -624,15 +643,18 @@ async def rating(applno: str):
     try:
         ids = loadedfiles_id(conn,applno)
         trans = get_transaction_data(conn,ids)
-        months = expenditure.distinct_months(trans)
-        expd = expenditure.classify_trans(trans)
-        data = expenditure.money(expd)
-        gross_income = expenditure.repeated_credits(data,months)
-        expenses = expenditure.repeated_debits(data,months)
-        emi = get_emi(conn,applno)
-        update_loan_details(conn,applno,gross_income,expenses,emi)
-        rating_calculation(conn,applno)
-        message = "Rating calculated and updated in loanDetails table successfully"
+        if trans != []:
+            months = expenditure.distinct_months(trans)
+            expd = expenditure.classify_trans(trans)
+            data = expenditure.money(expd)
+            gross_income = expenditure.repeated_credits(data,months)
+            expenses = expenditure.repeated_debits(data,months)
+            emi = get_emi(conn,applno)
+            update_loan_details(conn,applno,gross_income,expenses,emi)
+            rating_calculation(conn,applno)
+            message = "Rating calculated and updated in loanDetails table successfully"
+        else:
+            message = "No transactions data found for the application number"
     except Exception as e:
         message = f"Error In Calculating Rating engine: {str(e)}"
 
