@@ -194,12 +194,12 @@ def get_key_value_data(conn, account_num):
         if cursor is not None:
             cursor.close()
 
-def get_loadedfiles_data(conn, file_path):
+def get_loadedfiles_data(conn, file_path, applno):
     cursor = None
     try:
         cursor = conn.cursor()
-        query = "SELECT id, applno FROM loadedfiles WHERE docname = %s"
-        cursor.execute(query, (file_path,))
+        query = "SELECT id, applno FROM loadedfiles WHERE docname = %s and applno = %s"
+        cursor.execute(query, (file_path,applno))
         match_id = cursor.fetchone()
         if match_id:
             return {
@@ -325,9 +325,12 @@ def rating_calculation(conn, applno):
         """
         cur.execute(sql_query, (applno,))
         total_score = cur.fetchone()[0] / 4
-
+        if total_score > 900:
+            rating = 885
+        else:
+            rating = total_score
         update_query = "UPDATE loandetails SET rating = %s WHERE applno = %s;"
-        cur.execute(update_query, (total_score, applno))
+        cur.execute(update_query, (rating, applno))
         conn.commit()
     except (Exception, psycopg2.DatabaseError) as error:
         print(f"Error updating loan details: {error}")
@@ -336,6 +339,35 @@ def rating_calculation(conn, applno):
         if cur is not None:
             cur.close()
 
+def delete_data_by_docid(conn, docids):
+    cur = None
+    try:
+        cur = conn.cursor()
+        # Delete from extraction_key_value
+        cur.execute("DELETE FROM extraction_key_value WHERE docid IN %s", (tuple(docids),))
+        # Delete from extract_transaction_data
+        cur.execute("DELETE FROM extract_transaction_data WHERE docid IN %s", (tuple(docids),))
+        conn.commit()
+        print("Data deleted successfully.")
+    except psycopg2.Error as e:
+        print(f"Error deleting data: {e}")
+        conn.rollback()
+    finally:
+        if cur is not None:
+            cur.close()
+
+def filter_unique_records(data):
+    # Convert the data to a DataFrame
+    df = pd.DataFrame(data, columns=['id','docid','SerialNo','TransactionId','Txn_Date','Value_Date','Description','ChequeNumber','Amount','Debit','Credit','Balance','Init.Br','bankname','RemitterBranch'])
+
+    # Drop duplicates excluding the first and second column
+    unique_df = df.iloc[:, 2:].drop_duplicates()
+
+    # Convert the DataFrame back to a list of tuples
+    unique_records = unique_df.to_records(index=False)
+
+    # Convert each record to a tuple and return as a list
+    return [tuple(record) for record in unique_records]
 
 @app.post("/extract/uploaddocument/")
 async def uploaddocument(applno: str,files: List[UploadFile] = File(...)):
@@ -345,7 +377,7 @@ async def uploaddocument(applno: str,files: List[UploadFile] = File(...)):
         for file in files:
             name = file.filename.split('.')[0]
             ext = file.filename.split('.')[-1]
-            if ext.lower() != 'pdf':
+            if ext.lower() != 'pdf' and ext.lower() != 'xml':
                 already_present_files.append({"file_name": name, "error": "Document format is not supported"})
                 continue
 
@@ -353,7 +385,7 @@ async def uploaddocument(applno: str,files: List[UploadFile] = File(...)):
             with open(file_path, 'wb+') as f:
                 f.write(file.file.read())
 
-            check_data_present = get_loadedfiles_data(conn,file_path)
+            check_data_present = get_loadedfiles_data(conn,file_path,applno)
             if check_data_present is not None :
                 already_present_files.append({"file_name": name, "error": f"This file with docid {check_data_present.get('docid')} for applno '{check_data_present.get('applno')}' already present in the DB"})
                 continue
@@ -391,6 +423,11 @@ async def extract_details(docid: int):
     pdf_path = get_docname(conn,docid)
     if pdf_path is None or not os.path.exists(pdf_path):
         raise HTTPException(status_code=404, detail="PDF file not found")
+
+    filename, file_extension = os.path.splitext(pdf_path)
+    if file_extension.lower() == '.xml':
+        return {"pdf_path": pdf_path}
+        
     try:
         details = {}
         with pdfplumber.open(pdf_path) as pdf:
@@ -412,16 +449,16 @@ async def extract_details(docid: int):
                 details = extract.extract_key_value_sbi_yono(info)
                 details['docid'] = docid
                 details['bankname'] = bank
-                account_num = details['accountno']
+                # account_num = details['accountno']
             else:
                 details = extract.extract_key_value_sbi(info)
                 details['address'] = details['address'].replace("\n", " ")
                 details['docid'] = docid
                 details['bankname'] = bank
-                account_num = details['accountno']
-            check_data_present = get_key_value_data(conn,account_num)
-            if check_data_present is not None and details.get('statementperiod') == check_data_present.get('statementperiod'):
-                raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
+                # account_num = details['accountno']
+            # check_data_present = get_key_value_data(conn,account_num)
+            # if check_data_present is not None and details.get('statementperiod') == check_data_present.get('statementperiod'):
+            #     raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
             insert_details(conn,details)
 
         elif bank == "HDFC Bank":
@@ -430,10 +467,10 @@ async def extract_details(docid: int):
             details['odlimit'] = details['odlimit'].replace("\n", " ")
             details['docid'] = docid
             details['bankname'] = bank
-            account_num = details['accountno']
-            check_data_present = get_key_value_data(conn,account_num)
-            if check_data_present is not None and details.get('statementperiodfrom') == check_data_present.get('statementperiodfrom') and details.get('statementperiodto') == check_data_present.get('statementperiodto'):
-                raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
+            # account_num = details['accountno']
+            # check_data_present = get_key_value_data(conn,account_num)
+            # if check_data_present is not None and details.get('statementperiodfrom') == check_data_present.get('statementperiodfrom') and details.get('statementperiodto') == check_data_present.get('statementperiodto'):
+            #     raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
             insert_details(conn,details)
 
         elif bank == "INDIAN BANK":
@@ -441,10 +478,10 @@ async def extract_details(docid: int):
             details['address'] = ', '.join(details['address'])
             details['docid'] = docid
             details['bankname'] = bank
-            account_num = details['accountno']
-            check_data_present = get_key_value_data(conn,account_num)
-            if check_data_present is not None and details.get('statementperiod') == check_data_present.get('statementperiod'):
-                raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
+            # account_num = details['accountno']
+            # check_data_present = get_key_value_data(conn,account_num)
+            # if check_data_present is not None and details.get('statementperiod') == check_data_present.get('statementperiod'):
+            #     raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
             insert_details(conn,details)
 
         elif bank == "UNION BANK OF INDIA":
@@ -452,10 +489,10 @@ async def extract_details(docid: int):
             details['statementperiodto'] = details['statementperiodto'].replace("\n", "")
             details['docid'] = docid
             details['bankname'] = bank
-            account_num = details['accountno']
-            check_data_present = get_key_value_data(conn,account_num)
-            if check_data_present is not None and details.get('statementperiodfrom') == check_data_present.get('statementperiodfrom') and details.get('statementperiodto') == check_data_present.get('statementperiodto'):
-                raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
+            # account_num = details['accountno']
+            # check_data_present = get_key_value_data(conn,account_num)
+            # if check_data_present is not None and details.get('statementperiodfrom') == check_data_present.get('statementperiodfrom') and details.get('statementperiodto') == check_data_present.get('statementperiodto'):
+            #     raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
             insert_details(conn,details)
 
         elif bank == "BANK OF BARODA":
@@ -463,10 +500,10 @@ async def extract_details(docid: int):
             details = extract.extract_key_value_bob(text_with_coords_bob)
             details['docid'] = docid
             details['bankname'] = bank
-            account_num = details['accountno']
-            check_data_present = get_key_value_data(conn,account_num)
-            if check_data_present is not None and details.get('statementperiod') == check_data_present.get('statementperiod'):
-                raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
+            # account_num = details['accountno']
+            # check_data_present = get_key_value_data(conn,account_num)
+            # if check_data_present is not None and details.get('statementperiod') == check_data_present.get('statementperiod'):
+            #     raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
             insert_details(conn,details)
 
         elif bank == "AXIS BANK":
@@ -474,20 +511,20 @@ async def extract_details(docid: int):
             details['address'] = details['address'].replace("\n", " ")
             details['docid'] = docid
             details['bankname'] = bank
-            account_num = details['accountno']
-            check_data_present = get_key_value_data(conn,account_num)
-            if check_data_present is not None and details.get('statementperiodfrom') == check_data_present.get('statementperiodfrom') and details.get('statementperiodto') == check_data_present.get('statementperiodto'):
-                raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
+            # account_num = details['accountno']
+            # check_data_present = get_key_value_data(conn,account_num)
+            # if check_data_present is not None and details.get('statementperiodfrom') == check_data_present.get('statementperiodfrom') and details.get('statementperiodto') == check_data_present.get('statementperiodto'):
+            #     raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
             insert_details(conn,details)
 
         elif bank == "YES BANK":
             details = extract.extract_key_value_yes(info)
             details['docid'] = docid
             details['bankname'] = bank
-            account_num = details['accountno']
-            check_data_present = get_key_value_data(conn,account_num)
-            if check_data_present is not None and details.get('statementperiod') == check_data_present.get('statementperiod'):
-                raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
+            # account_num = details['accountno']
+            # check_data_present = get_key_value_data(conn,account_num)
+            # if check_data_present is not None and details.get('statementperiod') == check_data_present.get('statementperiod'):
+            #     raise HTTPException(status_code=409, detail=f"Details for docid {check_data_present.get('docid')} already present in the DB")
             insert_details(conn,details)
         else:
             raise ValueError("Bank not supported")
@@ -510,13 +547,17 @@ async def extract_transactions(docid: int):
     if transaction_id == docid:
         raise HTTPException(status_code=200, detail="Table Data Already parsed and inserted into the DB")
 
-    duplicate_insertion = get_key_value_id(conn,docid)
-    if duplicate_insertion is None:
-        raise HTTPException(status_code=409, detail="Transaction data cannot be  parsed as Key_values are not parsed for this docid.")
+    # duplicate_insertion = get_key_value_id(conn,docid)
+    # if duplicate_insertion is None:
+    #     raise HTTPException(status_code=409, detail="Transaction data cannot be  parsed as Key_values are not parsed for this docid.")
 
     pdf_path = get_docname(conn,docid)
     if pdf_path is None or not os.path.exists(pdf_path):
         raise HTTPException(status_code=404, detail="PDF file not found")
+
+    filename, file_extension = os.path.splitext(pdf_path)
+    if file_extension.lower() == '.xml':
+        return {"pdf_path": pdf_path}
 
     try:
         details = {}
@@ -644,6 +685,7 @@ async def rating(applno: str):
         ids = loadedfiles_id(conn,applno)
         trans = get_transaction_data(conn,ids)
         if trans != []:
+            trans = filter_unique_records(trans)
             months = expenditure.distinct_months(trans)
             expd = expenditure.classify_trans(trans)
             data = expenditure.money(expd)
@@ -652,6 +694,7 @@ async def rating(applno: str):
             emi = get_emi(conn,applno)
             update_loan_details(conn,applno,gross_income,expenses,emi)
             rating_calculation(conn,applno)
+            delete_data_by_docid(conn,ids)
             message = "Rating calculated and updated in loanDetails table successfully"
         else:
             message = "No transactions data found for the application number"
