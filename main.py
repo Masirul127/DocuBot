@@ -358,7 +358,7 @@ def delete_data_by_docid(conn, docids):
 
 def filter_unique_records(data):
     # Convert the data to a DataFrame
-    df = pd.DataFrame(data, columns=['id','docid','SerialNo','TransactionId','Txn_Date','Value_Date','Description','ChequeNumber','Amount','Debit','Credit','Balance','Init.Br','bankname','RemitterBranch'])
+    df = pd.DataFrame(data, columns=['id','docid','SerialNo','TransactionId','Txn_Date','Value_Date','Description','ChequeNumber','Amount','Debit','Credit','Balance','Init.Br','bankname','RemitterBranch','Mode','Type'])
 
     # Drop duplicates excluding the first and second column
     unique_df = df.iloc[:, 2:].drop_duplicates()
