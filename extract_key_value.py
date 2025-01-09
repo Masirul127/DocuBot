@@ -46,12 +46,15 @@ class Extraction:
         address = re.search(r'Address\s+:\s+(.*?)\nDate', cleaned_text, re.DOTALL)
         details['address'] = address.group(1) if address else "Not Found"
         #Extracting Balance as on
-        balance_as_on = re.search(r'Balance as on (\d+ \w+ \d+)', cleaned_text)
+        # balance_as_on = re.search(r'Balance as on (\d+ \w+ \d+)', cleaned_text)
+        # details['balanceason'] = balance_as_on.group(1) if balance_as_on else "Not Found"
+        balance_as_on = re.search(r'Balance(?:ason| as on)\s*(\d+\s*\w+\s*\d+)', cleaned_text)
         details['balanceason'] = balance_as_on.group(1) if balance_as_on else "Not Found"
         #Extracting account statement date
         account_statement = re.search(r'Account Statement from \d+ \w+ \d+ to \d+ \w+ \d+', cleaned_text)
         details['statementperiod'] = account_statement.group(0) if account_statement else "Not Found"
-        balanceamount = re.search(r"Balance as on (\d{1,2} \w{3} \d{4}) :[\n\s]*([\d,.]+)", cleaned_text)
+        # balanceamount = re.search(r"Balance as on (\d{1,2} \w{3} \d{4}) :[\n\s]*([\d,.]+)", cleaned_text)
+        balanceamount = re.search(r"Balance(?:ason| as on)\s*(\d{1,2}\s*\w{3}\s*\d{4})\s*:\s*([\d,.]+)", cleaned_text)
         details['balanceamount'] = balanceamount.group(2) if balanceamount else "Not Found"
         # Extract other details using regex patterns and keys
         patterns = {
@@ -60,7 +63,8 @@ class Extraction:
             'branch': r'Branch\s*:\s*([^\n]+)\n',
             'drawingpower': r'Drawing Power\s*:\s*([^\n]+)\n',
             'interestrate': r'Interest Rate\(% p\.a.\) :\s*([0-9.]+)',
-            'modbalance': r'MOD Balance\s*:\s*([^\n]+)\n',
+            # 'modbalance': r'MOD Balance\s*:\s*([^\n]+)\n',
+            'modbalance': r'MOD\s*Balance\s*:\s*([^\n]+)\n',
             'cif': r'CIF No\.\s*:\s*([^\n]+)\n',
             'ifsc': r'IFS Code\s*:\s*([^\n]+)\n\(Indian Financial System\)\n',
             'micrcode': r'MICR Code\s*:\s*([^\n]+)\n\(Magnetic Ink Character Recognition\)\n',
