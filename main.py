@@ -592,7 +592,12 @@ async def extract_transactions(docid: int):
                 df = pd.DataFrame(trans, columns=columns)
                 df['docid'] = docid
                 df['bankname'] = bank
-                df = df[df['Txn_Date'] != 'Txn Date']
+                # df = df[df['Txn_Date'] != 'Txn Date']
+                df = df[~df['Txn_Date'].isin(['Txn Date', 'TxnDate'])]
+                df['Txn_Date'] = df['Txn_Date'].astype(str).str.replace('\n', ' ')
+                df['Value_Date'] = df['Value_Date'].astype(str).str.replace('\n', ' ')
+                df['Txn_Date'] = df['Txn_Date'].str.replace(r'(\d{1,2})([A-Za-z]{3})(\d{4})', r'\1 \2 \3', regex=True)
+                df['Txn_Date'] = df['Txn_Date'].str.replace(r'(\d{1,2})([A-Za-z]{3})', r'\1 \2', regex=True)
                 df['Txn_Date'] = pd.to_datetime(df['Txn_Date'], format='%d %b %Y', errors='coerce')
                 trans = df.to_dict(orient='records')
                 create_or_update_transaction_table(trans,engine)
@@ -659,6 +664,7 @@ async def extract_transactions(docid: int):
             trans = transaction.extract_table_yes(pdf_path)
             columns =['Txn_Date','Value_Date','Description','Debit','Credit','Balance']
             df = pd.DataFrame(trans, columns=columns)
+            # df = df.drop(index=0).reset_index(drop=True)
             df['docid'] = docid
             df['bankname'] = bank
             df['Txn_Date'] = pd.to_datetime(df['Txn_Date'].str.strip(), format='%d/%m/%Y', errors='coerce')
